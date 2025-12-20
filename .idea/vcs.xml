@@ -2,5 +2,10 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/coresight_mode/coresight-trace" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/coresight_mode/patchelf" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/custom_mutators/grammar_mutator/grammar_mutator" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx" vcs="Git" />
   </component>
 </project>
