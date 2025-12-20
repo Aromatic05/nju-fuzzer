@@ -23,6 +23,7 @@ sudo apt-get install -y \
   python3-setuptools \
   cargo \
   libtool \
+  libpcap-dev \
   libgtk-3-dev
 
 # 3) Pin LLVM/Clang to 14 for Ubuntu 22.04 stability
