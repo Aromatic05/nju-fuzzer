@@ -1,0 +1,43 @@
+make DESTDIR=/home/aromatic/Applications/autotest-code/nju-fuzzer/env/target install
+
+binutils-2.28
+./configure 
+make -j$(nproc)
+/usr/local
+
+libjpeg-turbo-3.0.4
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+/opt/libjpeg-turbo
+
+libpng-1.6.29
+./configure 
+make -j$(nproc)
+/usr/local
+
+libxml2-2.13.4
+./autogen.sh
+make -j$(nproc)
+/usr/local
+
+lua-5.4.7
+make linux CC=afl-cc -j$(nproc)
+make install INSTALL_TOP=/home/aromatic/Applications/autotest-code/nju-fuzzer/env/target/lua
+/
+
+mjs-2.20.0
+sed -i.bak 's/^\(\t\)\$(DOCKER_CLANG) clang/\1$(CC)/' Makefile
+make all CC=afl-cc -j$(nproc)
+target就在build/mjs
+
+tcpdump-tcpdump-4.99.5
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+/usr/local
+
+
+
+
+
