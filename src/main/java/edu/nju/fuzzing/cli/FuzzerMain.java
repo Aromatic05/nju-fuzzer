@@ -1,10 +1,15 @@
 package edu.nju.fuzzing.cli;
 
 import edu.nju.fuzzing.core.FuzzingEngine;
+import edu.nju.fuzzing.exec.Executor;
+import edu.nju.fuzzing.exec.ProcessExecutor;
+import edu.nju.fuzzing.model.TargetSpec;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class FuzzerMain {
@@ -14,7 +19,7 @@ public class FuzzerMain {
 
         Path workdir = Path.of(argMap.getOrDefault("--workdir", "workdir"));
         int duration = Integer.parseInt(argMap.getOrDefault("--duration", "3"));
-        int timeout = Integer.parseInt(argMap.getOrDefault("--timeout", "1000"));
+        int timeoutMs = Integer.parseInt(argMap.getOrDefault("--timeout", "1000"));
 
         // 创建 workdir 结构
         Files.createDirectories(workdir.resolve("queue"));
@@ -26,9 +31,25 @@ public class FuzzerMain {
         System.out.println("NJUFuzzer skeleton started.");
         System.out.println("workdir = " + workdir.toAbsolutePath());
         System.out.println("duration = " + duration + "s");
-        System.out.println("timeout  = " + timeout + "ms");
+        System.out.println("timeout  = " + timeoutMs + "ms");
 
-        FuzzingEngine engine = new FuzzingEngine(workdir, duration);
+        // Skeleton 阶段：默认跑 /bin/cat（STDIN 模式）
+        TargetSpec spec = new TargetSpec(
+                "DEMO",
+                Path.of("/bin/cat"),
+                List.of("/bin/cat"),
+                Map.of(),
+                Duration.ofMillis(timeoutMs)
+        );
+
+        Executor executor = new ProcessExecutor();
+        FuzzingEngine engine = new FuzzingEngine(
+                workdir,
+                duration,
+                spec,
+                executor,
+                Duration.ofMillis(timeoutMs)
+        );
         engine.run();
 
         System.out.println("NJUFuzzer skeleton finished.");
