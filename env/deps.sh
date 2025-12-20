@@ -22,6 +22,7 @@ sudo apt-get install -y \
   libpixman-1-dev \
   python3-setuptools \
   cargo \
+  libtool \
   libgtk-3-dev
 
 # 3) Pin LLVM/Clang to 14 for Ubuntu 22.04 stability
