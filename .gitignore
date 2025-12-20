@@ -40,3 +40,5 @@ build/
 
 /workdir/**
 /env/third_party/**
+/env/target/**
+/env/out/**
