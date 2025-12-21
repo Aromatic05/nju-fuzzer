@@ -38,9 +38,21 @@ public class ProcessExecutor implements Executor {
         if (cmd.inputMode() == InputMode.STDIN) {
             // stdinData may be null -> treat as empty
             byte[] data = (stdinData == null) ? new byte[0] : stdinData;
-            try (OutputStream os = p.getOutputStream()) {
-                os.write(data);
-                os.flush();
+            OutputStream os = p.getOutputStream();
+            try {
+                try {
+                    os.write(data);
+                    os.flush();
+                } catch (java.io.IOException e) {
+                    // Child process may have exited (e.g. crashed) before or during write.
+                    // This manifests as a Broken pipe on some platforms/CI. Ignore and proceed.
+                }
+            } finally {
+                try {
+                    os.close();
+                } catch (Exception ignored) {
+                    // ignore close errors (Broken pipe may surface here on some platforms)
+                }
             }
         } else {
             // FILE mode: no stdin required; close to avoid target waiting on stdin
