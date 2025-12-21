@@ -13,3 +13,4 @@ bash deps.sh
 bash fetch_targets.sh
 bash build_aflpp.sh
 bash build_target.sh
+bash fetch_seeds.sh

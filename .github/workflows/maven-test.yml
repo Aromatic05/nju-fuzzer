@@ -1,0 +1,19 @@
+name: Maven Tests
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run env script and tests
+        shell: bash
+        run: |
+          set -eux
+          chmod +x env/env.sh || true
+          source env/env.sh
+          mvn -B test
