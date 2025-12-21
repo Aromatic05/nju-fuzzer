@@ -4,8 +4,51 @@
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/coresight_mode/coresight-trace" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/coresight_mode/coresight-trace/CSAL" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/coresight_mode/coresight-trace/coresight-decoder" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/coresight_mode/coresight-trace/udmabuf" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/coresight_mode/patchelf" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/custom_mutators/grammar_mutator/grammar_mutator" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/capstone" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/capstone_v4" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/dtc" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/libxdc" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/QemuMacDrivers" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/SLOF" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/edk2" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/edk2/ArmPkg/Library/ArmSoftFloatLib/berkeley-softfloat-3" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/edk2/CryptoPkg/Library/OpensslLib/openssl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/edk2/CryptoPkg/Library/OpensslLib/openssl/boringssl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/edk2/CryptoPkg/Library/OpensslLib/openssl/krb5" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/edk2/CryptoPkg/Library/OpensslLib/openssl/pyca-cryptography" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/ipxe" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/openbios" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/openhackware" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/opensbi" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/qboot" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/qemu-palcode" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/seabios" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/seabios-hppa" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/sgabios" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/skiboot" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/u-boot" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/roms/u-boot-sam460ex" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/slirp" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/tests/fp/berkeley-softfloat-3" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/tests/fp/berkeley-testfloat-3" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/QEMU-Nyx/ui/keycodemapdb" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/libnyx" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/nyx_mode/packer" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/qemu_mode/qemuafl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/qemu_mode/qemuafl/capstone" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/qemu_mode/qemuafl/dtc" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/qemu_mode/qemuafl/roms/QemuMacDrivers" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/qemu_mode/qemuafl/roms/qemu-palcode" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/qemu_mode/qemuafl/slirp" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/qemu_mode/qemuafl/tests/fp/berkeley-softfloat-3" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/qemu_mode/qemuafl/tests/fp/berkeley-testfloat-3" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/qemu_mode/qemuafl/ui/keycodemapdb" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/unicorn_mode/unicornafl" vcs="Git" />
   </component>
 </project>
