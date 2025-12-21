@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ $UID -ne 0 ]; then
+  echo "[ERR] Please run this script as root (sudo)." >&2
+  exit 1
+fi
+
 # Where to clone AFL++
 AFL_DIR="${AFL_DIR:-$PWD/third_party/AFLplusplus}"
 PREFIX="${PREFIX:-/usr/local}"
@@ -43,7 +48,7 @@ make distrib
 
 # Install to /usr/local
 # AFL++ Makefile honors PREFIX
-sudo make install PREFIX="$PREFIX"
+make install PREFIX="$PREFIX"
 
 popd >/dev/null
 
