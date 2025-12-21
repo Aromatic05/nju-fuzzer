@@ -42,3 +42,4 @@ build/
 /env/third_party/**
 /env/target/**
 /env/out/**
+/env/seeds/**
