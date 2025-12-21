@@ -13,7 +13,7 @@ jobs:
   test:
     runs-on: ubuntu-22.04
     container:
-      image: ghcr.io/<OWNER>/nju-fuzzer-toolchain:latest
+      image: ghcr.io/aromatic05/nju-fuzzer-toolchain:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
