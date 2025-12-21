@@ -13,5 +13,7 @@ jobs:
       - name: Run env script and tests
         shell: bash
         run: |
-          sudo ./env/env.sh
+          cd env
+          sudo ./env.sh
+          cd ..
           mvn -B test
