@@ -4,55 +4,22 @@ on:
     branches: [ main, master ]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
 jobs:
-  build:
+  test:
     runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/<OWNER>/nju-fuzzer-toolchain:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Restore cache for installed outputs
-        uses: actions/cache@v4
-        with:
-          path: |
-            env/out
-            env/seeds
-            /usr/local
-          key: ${{ runner.os }}-nju-fuzzer-toolchain-${{ hashFiles('env/**') }}
-
-      - name: Run env script (skip rebuild if cached)
-        shell: bash
-        run: |
-          set -eux
-
-          # If a build marker exists in cached tree, skip heavy rebuilds
-          if [ -f env/out/.build_complete ]; then
-            echo "Toolchain build marker found — skipping env.sh"
-          else
-            # env.sh requires root to install/build heavy deps
-            cd env
-            sudo ./env.sh
-            cd ..
-            # create marker so cache can indicate completed build
-            sudo touch env/out/.build_complete
-            # ensure marker is owned so it appears in restored cache
-            sudo chown $USER:$USER env/out/.build_complete || true
-          fi
-
-      - name: Set up deps
-        shell: bash
-        run: |
-          set -eux
-          if [ -f env/out/.build_complete ]; then
-            sudo ./env/deps.sh
-          fi
-
-          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-          sudo update-alternatives --install /usr/bin/java java /usr/lib/jvm/jdk-17/bin/java 1
-          sudo update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/jdk-17/bin/javac 1
-          sudo update-alternatives --install /usr/bin/jshell jshell /usr/lib/jvm/jdk-17/bin/jshell 1
-          sudo update-alternatives --set java /usr/lib/jvm/jdk-17/bin/java
-          sudo update-alternatives --set javac /usr/lib/jvm/jdk-17/bin/javac
-          sudo update-alternatives --set jshell /usr/lib/jvm/jdk-17/bin/jshell
+      - uses: actions/checkout@v4
 
       - name: Run Maven tests
         shell: bash
