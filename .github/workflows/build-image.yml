@@ -29,6 +29,6 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/aromatic05/nju-fuzzer:toolchain-${{ github.ref_name }}
-            ghcr.io/aromatic05/nju-fuzzer:latest
+            ghcr.io/aromatic05/nju-fuzzer-toolchain:toolchain-${{ github.ref_name }}
+            ghcr.io/aromatic05/nju-fuzzer-toolchain:latest
 

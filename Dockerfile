@@ -48,8 +48,6 @@ WORKDIR /workspace
 
 # Install runtime packages to match env dependencies so runtime is stable
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    openjdk-17-jdk \
-    maven \
     build-essential \
     python3-dev \
     automake \
@@ -74,6 +72,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     curl \
     python3-pip \
+    openjdk-17-jdk \
+    maven \
   && rm -rf /var/lib/apt/lists/*
 
 # Ensure JAVA_HOME
@@ -83,6 +83,7 @@ ENV PATH=${JAVA_HOME}/bin:${PATH}
 # Copy only the built outputs we want to keep
 COPY --from=builder /workspace/env/out /workspace/env/out
 COPY --from=builder /workspace/env/seeds /workspace/env/seeds
+COPY --from=builder /usr/local /usr/local
 
 LABEL org.opencontainers.image.description="nju-fuzzer image with AFL++ and target binaries"
 
