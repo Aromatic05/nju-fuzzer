@@ -13,7 +13,5 @@ jobs:
       - name: Run env script and tests
         shell: bash
         run: |
-          set -eux
-          chmod +x env/env.sh || true
-          source env/env.sh
+          sudo ./env/env.sh
           mvn -B test
