@@ -9,11 +9,6 @@ fi
 
 apt-get update -y
 
-# 1) Java + Maven
-apt-get install -y \
-  openjdk-17-jdk \
-  maven
-
 # 2) AFL++ README dependencies (build AFL++ itself)
 apt-get install -y \
   build-essential \
@@ -51,6 +46,11 @@ apt-get install -y meson ninja-build    # QEMU mode
 apt-get install -y cpio libcapstone-dev # Nyx mode
 apt-get install -y wget curl            # Frida mode
 apt-get install -y python3-pip          # Unicorn mode
+
+# 1) Java + Maven
+apt-get install -y \
+  openjdk-17-jdk \
+  maven
 
 echo "[OK] All dependencies installed."
 
