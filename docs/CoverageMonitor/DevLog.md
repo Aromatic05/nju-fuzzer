@@ -100,3 +100,93 @@ engine.run(); // 自动处理覆盖率监控、corpus 保存、统计输出
 **测试**:
 - [FuzzingEngineIntegrationTest.java](../src/test/java/edu/nju/fuzzing/core/FuzzingEngineIntegrationTest.java) - 集成测试
 - [CorpusIntegrationTest.java](../src/test/java/edu/nju/fuzzing/corpus/CorpusIntegrationTest.java) - Corpus 集成测试
+
+---
+
+## ✅ Iteration 4: 扩展覆盖监控支持种子调度（2025-12-22）
+
+### 背景与动机
+
+在完成基础覆盖监控（Iterations 1-3）和主流程集成后，评估了完整的模糊测试数据通路，识别了需要支持种子调度的缺口。
+
+**种子调度的覆盖率需求**：
+1. **边索引（Edge Indices）**: 需要知道"哪些边"被触发，而非仅计数
+2. **全局覆盖数据库（Coverage DB）**: 维护 `edgeFreq[i]`, `topRated[i]`, `favored` 集合
+3. **稀有度评分（Rarity Score）**: 计算 `Σ(1/freq)` over hitEdges
+4. **Top-Rated Seeds**: 对每条边，保存触发它的"最优" seed
+5. **Favored Seeds**: 至少 top-rated 一条边的 seeds，优先调度
+
+### 实现的组件
+
+#### 基础工具层
+- **XxHash64.java** (164 lines): 快速哈希函数，用于 bitmap 去重
+- **EdgeSet.java** (276 lines): 稀疏边索引集合，支持集合操作（union/intersect/subtract）
+
+#### 策略扩展层
+- **DiffResultEx.java**: 扩展 diff 结果，包含 EdgeSet (newEdges, hitEdges)
+- **CoverageDiffStrategyEx.java** (226 lines): 扩展策略接口，返回边级别详情
+  - `SeenNonZeroStrategyEx`: 原生扩展实现
+  - `WrappedStrategyEx`: 包装现有策略（向后兼容）
+
+#### 全局数据库层
+- **CoverageDB.java** (385 lines): 全局覆盖数据库
+  - 维护 edgeFreq, topRated, favored 集合
+  - 支持 4 种 TopRated 标准（SMALLEST_INPUT, MOST_RECENT, FEWEST_EDGES, FASTEST_EXEC）
+  - 提供稀有度评分、冗余检测接口
+  - 线程安全设计
+
+#### 监控扩展层
+- **CoverageEx.java** (122 lines): 扩展覆盖模型，包含 hitEdges, newEdges, execTimeNanos, stable
+- **CoverageMonitorEx.java** (35 lines): 扩展监控接口
+- **ShmCoverageMonitorEx.java** (279 lines): 扩展监控实现，集成 CoverageDB
+
+### 测试覆盖
+
+新增 30 个测试，总计 **174 tests passing**：
+- **EdgeSetTest**: 12 tests（bitmap 提取、集合操作、成员测试）
+- **CoverageDBTest**: 11 tests（新边检测、频率追踪、top-rated 选择、favored 管理）
+- **XxHash64Test**: 7 tests（一致性、碰撞、大数据处理）
+
+### 向后兼容性
+
+✅ 保留现有接口：`CoverageMonitor`, `CoverageDiffStrategy`, `Coverage`  
+✅ 扩展接口继承基础接口：`CoverageMonitorEx extends CoverageMonitor`  
+✅ 提供转换方法：`CoverageEx.toBasic()`, `CoverageEx.fromBasic()`
+
+### Git Commit 组织
+
+拆分为 6 个逻辑 commit：
+1. **feat(cov): add XxHash64** - 基础哈希工具
+2. **feat(cov): add EdgeSet** - 稀疏边集合
+3. **feat(cov): add extended diff result** - 扩展策略接口
+4. **feat(cov): add CoverageDB** - 全局数据库
+5. **feat(model): add CoverageEx** - 扩展模型
+6. **feat(cov): add CoverageMonitorEx** - 扩展监控器
+
+### 新增文件
+
+**源文件**（8 个）：
+- XxHash64.java, EdgeSet.java
+- DiffResultEx.java, CoverageDiffStrategyEx.java
+- CoverageDB.java, CoverageEx.java
+- CoverageMonitorEx.java, ShmCoverageMonitorEx.java
+
+**测试文件**（3 个）：
+- EdgeSetTest.java, CoverageDBTest.java, XxHash64Test.java
+
+---
+
+## 📊 当前状态总结
+
+**测试统计**: 174 tests passing (144 基础 + 30 扩展)
+
+**已完成的核心组件**:
+✅ AFL++ 插装、执行器、覆盖率监控（基础+扩展）  
+✅ 全局覆盖数据库、边级别详情、Corpus 管理  
+✅ 统计与日志、FuzzingEngine 集成
+
+**待实现的组件**:
+🔜 SeedQueue、Mutator、PowerScheduler、Scheduler
+
+**最后更新**: 2025年12月22日  
+**版本**: v1.1 - Extended Coverage Monitoring for Seed Scheduling

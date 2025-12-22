@@ -406,7 +406,7 @@ export AFL_MAP_SIZE=65536  # 可选
 2. `shouldRunWithCoverageMonitoring` - 覆盖率监控集成
 3. `shouldHandleCrashingTarget` - 崩溃检测
 
-**总计**：144 tests passing
+**总计**：174 tests passing（144 基础 + 30 扩展）
 
 ---
 
@@ -580,8 +580,11 @@ A: 集成测试需要真实的 AFL++ 插装二进制。测试会自动跳过（`
 3. **并发执行支持**：多线程/多进程执行目标程序
 4. **覆盖率可视化**：生成覆盖率增长曲线图
 5. **JNI 实现**：替代 JNA，进一步提升性能
+6. ~~**边级别覆盖详情**~~：✅ 已实现（EdgeSet, CoverageDiffStrategyEx）
+7. ~~**全局覆盖数据库**~~：✅ 已实现（CoverageDB）
+8. ~~**Favored seeds 支持**~~：✅ 已实现（TopRated/Favored 机制）
 
 ---
 
-**最后更新**: 2025年12月21日  
-**版本**: v1.0 - Coverage-Guided Fuzzer with AFL++ SHM Integration
+**最后更新**: 2025年12月22日  
+**版本**: v1.1 - Extended Coverage Monitoring for Seed Scheduling
