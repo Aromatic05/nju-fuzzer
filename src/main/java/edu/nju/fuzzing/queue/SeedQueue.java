@@ -37,10 +37,11 @@ public class SeedQueue {
                 .filter(p -> !p.getFileName().toString().startsWith(".")) // 过滤隐藏文件
                 .forEach(path -> {
                     try {
+                        if (path.toString().endsWith(".meta")) return;
                         byte[] data = Files.readAllBytes(path);
                         // 初始种子没有元数据，暂设为0
-                        Seed seed = new Seed(path.toFile(), data); // 封装成 Seed 对象
-                        seeds.add(seed);
+                         Seed seed = Seed.loadWithMetadata(path.toFile(), data);
+                         seeds.add(seed);
                     } catch (IOException e) {
                         System.err.println("Failed to read seed: " + path + ", " + e.getMessage());
                     }
@@ -57,6 +58,7 @@ public class SeedQueue {
     public void addSeed(Seed seed) {
         if (seed != null) {
             seeds.add(seed);
+            seed.saveMetadata(); 
         }
     }
 
