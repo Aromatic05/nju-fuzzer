@@ -1,7 +1,9 @@
 package edu.nju.fuzzing.model;
 
-import java.io.File;
 import java.util.Arrays;
+import java.io.*;
+import java.nio.file.Path;
+import java.util.Properties;
 
 /**
  * 种子：存储在队列中、有价值的输入。
@@ -24,23 +26,95 @@ public class Seed {
     private boolean wasFuzzed;     // 是否已被调度过
     private int handicap;          // 调度权重 (新手保护)
 
+
+    public void saveMetadata() {
+        // 元数据文件名：原文件名 + ".meta"
+        File metaFile = new File(file.getParent(), file.getName() + ".meta");
+        
+        Properties props = new Properties();
+        
+        // 1. 存血缘信息
+        if (parentId != null) props.setProperty("parent_id", parentId);
+        props.setProperty("depth", String.valueOf(depth));
+        if (birthType != null) props.setProperty("birth_type", birthType);
+        
+        // 2. 存调度信息
+        props.setProperty("handicap", String.valueOf(handicap));
+        props.setProperty("was_fuzzed", String.valueOf(wasFuzzed));
+        
+        // 3. 存性能指标
+        props.setProperty("exec_time", String.valueOf(executionTime));
+        props.setProperty("bitmap_size", String.valueOf(bitmapSize));
+
+        // 写入硬盘
+        try (FileOutputStream out = new FileOutputStream(metaFile)) {
+            props.store(out, "Seed Metadata");
+        } catch (IOException e) {
+            System.err.println("Failed to save metadata for seed: " + id);
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 静态工厂方法：尝试加载元数据并创建 Seed
+     * 如果 .meta 文件不存在（比如用户提供的初始种子），则使用默认值
+     */
+    public static Seed loadWithMetadata(File seedFile, byte[] data) {
+        // 1. 先创建一个默认状态的 Seed (depth=0, etc.)
+        // 这里我们可以复用之前的构造函数逻辑，或者直接 new 一个对象再填值
+        // 为了方便，我们假设这是一个新的 Seed，然后尝试覆盖它的字段
+        // 注意：因为 Seed 的字段是 final 的，最好的方式是在构造前读取
+        
+        File metaFile = new File(seedFile.getParent(), seedFile.getName() + ".meta");
+        
+        String parentId = null;
+        int depth = 0;
+        String birthType = "INITIAL";
+        int handicap = 8;
+        boolean wasFuzzed = false;
+        long execTime = 0;
+        int bitmapSize = 0;
+
+        // 2. 如果 .meta 存在，读取并覆盖
+        if (metaFile.exists()) {
+            try (FileInputStream in = new FileInputStream(metaFile)) {
+                Properties props = new Properties();
+                props.load(in);
+                
+                parentId = props.getProperty("parent_id", null);
+                depth = Integer.parseInt(props.getProperty("depth", "0"));
+                birthType = props.getProperty("birth_type", "INITIAL");
+                handicap = Integer.parseInt(props.getProperty("handicap", "8"));
+                wasFuzzed = Boolean.parseBoolean(props.getProperty("was_fuzzed", "false"));
+                execTime = Long.parseLong(props.getProperty("exec_time", "0"));
+                bitmapSize = Integer.parseInt(props.getProperty("bitmap_size", "0"));
+                
+            } catch (Exception e) {
+                System.err.println("Warning: Corrupted metadata for " + seedFile.getName());
+            }
+        }
+
+        // 3. 调用全参构造函数 (你需要添加这个构造函数)
+        return new Seed(seedFile, data, parentId, depth, birthType, handicap, wasFuzzed, execTime, bitmapSize);
+    }
     /**
      * 构造函数 A: 用于加载初始种子 (从文件夹加载)
      * 此时没有 Parent，没有 Testcase
      */
-    public Seed(File file, byte[] data) {
+
+    // 你需要添加一个全参构造函数来支持 loadWithMetadata
+    private Seed(File file, byte[] data, String parentId, int depth, String birthType, 
+                 int handicap, boolean wasFuzzed, long execTime, int bitmapSize) {
         this.file = file;
-        this.data = data; // 初始加载通常不需要 copy，因为读取出来就是新的
+        this.data = data;
         this.id = file.getName();
-        
-        // 初始属性
-        this.parentId = null;
-        this.depth = 0;
-        this.birthType = "INITIAL";
-        
-        // 调度属性初始化
-        this.wasFuzzed = false;
-        this.handicap = 8;
+        this.parentId = parentId;
+        this.depth = depth;
+        this.birthType = birthType;
+        this.handicap = handicap;
+        this.wasFuzzed = wasFuzzed;
+        this.executionTime = execTime;
+        this.bitmapSize = bitmapSize;
     }
 
     /**
