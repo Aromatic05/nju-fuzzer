@@ -86,26 +86,64 @@ public class GrammarMutator implements Mutator {
     }
 
     // 递归生成核心逻辑
+//    private String generate(String mode, String token, int depth) {
+//        if (depth > MAX_DEPTH) return ""; // 深度熔断
+//
+//        if (!token.startsWith("<")) return token; // 终结符
+//
+//        Map<String, List<String>> rules = grammars.get(mode);
+//        List<String> expansions = rules.get(token);
+//
+//        // 如果没找到规则或规则为空，返回空串防止报错
+//        if (expansions == null || expansions.isEmpty()) return "";
+//
+//        String rule = expansions.get(random.nextInt(expansions.size()));
+//
+//        StringBuilder sb = new StringBuilder();
+//        // 正则匹配 <tag> 或 普通文本
+//        Pattern p = Pattern.compile("(<[^>]+>)|([^<]+)");
+//        Matcher m = p.matcher(rule);
+//
+//        while (m.find()) {
+//            if (m.group(1) != null) {
+//                sb.append(generate(mode, m.group(1), depth + 1));
+//            } else {
+//                sb.append(m.group(2));
+//            }
+//        }
+//        return sb.toString();
+//    }
+    // 递归生成核心逻辑
     private String generate(String mode, String token, int depth) {
         if (depth > MAX_DEPTH) return ""; // 深度熔断
 
-        if (!token.startsWith("<")) return token; // 终结符
+        // 1. 如果不是以 < 开头，肯定是普通文本，直接返回
+        if (!token.startsWith("<")) return token;
 
         Map<String, List<String>> rules = grammars.get(mode);
         List<String> expansions = rules.get(token);
 
-        // 如果没找到规则或规则为空，返回空串防止报错
-        if (expansions == null || expansions.isEmpty()) return "";
+        // === 修复点开始 ===
+        // 2. 如果以 < 开头，但在规则表中找不到对应的 Key
+        // 说明它不是变量（非终结符），而是普通的 XML 标签（如 <root>, <div, </a>）
+        // 此时应该原样返回 token，而不是返回空串！
+        if (expansions == null || expansions.isEmpty()) {
+            return token;
+        }
+        // === 修复点结束 ===
 
+        // 3. 随机选择一条规则展开
         String rule = expansions.get(random.nextInt(expansions.size()));
 
         StringBuilder sb = new StringBuilder();
         // 正则匹配 <tag> 或 普通文本
+        // 注意：这个正则会将 <root> 识别为 group(1)，这也正是我们需要上述修复的原因
         Pattern p = Pattern.compile("(<[^>]+>)|([^<]+)");
         Matcher m = p.matcher(rule);
 
         while (m.find()) {
             if (m.group(1) != null) {
+                // 递归调用
                 sb.append(generate(mode, m.group(1), depth + 1));
             } else {
                 sb.append(m.group(2));
