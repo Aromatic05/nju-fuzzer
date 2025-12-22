@@ -14,4 +14,9 @@ public class NoopCoverageMonitor implements CoverageMonitor {
     public Coverage afterRun(RunResult result) {
         return Coverage.empty(result);
     }
+
+    @Override
+    public void close() {
+        // No resources to clean up
+    }
 }
