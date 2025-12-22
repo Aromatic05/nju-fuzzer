@@ -8,11 +8,16 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ProcessExecutor implements Executor {
+    
+    private final AtomicLong execIdCounter = new AtomicLong(0);
 
     @Override
     public RunResult run(TargetCommand cmd, byte[] stdinData, Duration timeout, Path outDir) throws Exception {
+        long execId = execIdCounter.incrementAndGet();
+        
         if (cmd == null) throw new IllegalArgumentException("cmd is null");
         if (timeout == null) timeout = Duration.ofSeconds(1);
         if (outDir == null) throw new IllegalArgumentException("outDir is null");
@@ -62,7 +67,8 @@ public class ProcessExecutor implements Executor {
         }
 
         boolean finished = p.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
-        long execTimeMs = (System.nanoTime() - startNs) / 1_000_000;
+        long execTimeNs = System.nanoTime() - startNs;
+        long execTimeMs = execTimeNs / 1_000_000;
 
         if (!finished) {
             // timeout: kill process
@@ -74,8 +80,10 @@ public class ProcessExecutor implements Executor {
                 p.waitFor(200, TimeUnit.MILLISECONDS);
             }
             return new RunResult(
+                    execId,
                     cmd.inputFile(),
                     execTimeMs,
+                    execTimeNs,
                     -1,
                     true,
                     RunResult.Termination.TIMEOUT,
@@ -88,8 +96,10 @@ public class ProcessExecutor implements Executor {
         RunResult.Termination term = (exitCode == 0) ? RunResult.Termination.NORMAL : RunResult.Termination.ERROR;
 
         return new RunResult(
+                execId,
                 cmd.inputFile(),
                 execTimeMs,
+                execTimeNs,
                 exitCode,
                 false,
                 term,

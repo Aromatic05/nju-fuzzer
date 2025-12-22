@@ -113,8 +113,16 @@ public interface CoverageDiffStrategyEx extends CoverageDiffStrategy {
 
             // Compute hash
             long hash = XxHash64.hash(current, 0, mapSize);
+            
+            // Count non-zero bytes in bitmap
+            int nonZeroBytes = 0;
+            for (int i = 0; i < mapSize; i++) {
+                if (current[i] != 0) {
+                    nonZeroBytes++;
+                }
+            }
 
-            return DiffResultEx.of(newEdges, hitEdges, hash);
+            return DiffResultEx.of(newEdges, hitEdges, nonZeroBytes, hash);
         }
 
         @Override
@@ -192,12 +200,21 @@ public interface CoverageDiffStrategyEx extends CoverageDiffStrategy {
                     : EdgeSet.empty();
 
             long hash = XxHash64.hash(current, 0, mapSize);
+            
+            // Count non-zero bytes in bitmap
+            int nonZeroBytes = 0;
+            for (int i = 0; i < mapSize; i++) {
+                if (current[i] != 0) {
+                    nonZeroBytes++;
+                }
+            }
 
             // Use delegate's interesting decision
             return new DiffResultEx(
                     basic.newBytes(),
                     newEdges,
                     hitEdges,
+                    nonZeroBytes,
                     basic.interesting(),
                     hash
             );

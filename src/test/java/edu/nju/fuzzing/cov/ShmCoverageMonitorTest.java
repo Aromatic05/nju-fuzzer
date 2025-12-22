@@ -29,7 +29,7 @@ class ShmCoverageMonitorTest {
     }
 
     private RunResult createNormalResult() {
-        return new RunResult(
+        return RunResult.of(1L, 
                 Path.of("/tmp/test.bin"),
                 100L,
                 0,

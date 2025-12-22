@@ -37,14 +37,14 @@ class FileCorpusManagerTest {
      * Creates a test crash RunResult.
      */
     private RunResult createCrashResult(int exitCode) {
-        return new RunResult(null, 100, exitCode, false, Termination.ERROR, null, null);
+        return RunResult.of(1L, null, 100, exitCode, false, Termination.ERROR, null, null);
     }
 
     /**
      * Creates a test hang RunResult.
      */
     private RunResult createHangResult() {
-        return new RunResult(null, 5000, -1, true, Termination.TIMEOUT, null, null);
+        return RunResult.of(1L, null, 5000, -1, true, Termination.TIMEOUT, null, null);
     }
 
     @Test
