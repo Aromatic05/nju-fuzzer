@@ -50,5 +50,6 @@
     <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/qemu_mode/qemuafl/tests/fp/berkeley-testfloat-3" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/qemu_mode/qemuafl/ui/keycodemapdb" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/env/third_party/AFLplusplus/unicorn_mode/unicornafl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/env/third_party/lua" vcs="Git" />
   </component>
 </project>
