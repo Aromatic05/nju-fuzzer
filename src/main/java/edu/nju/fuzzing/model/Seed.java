@@ -2,7 +2,6 @@ package edu.nju.fuzzing.model;
 
 import java.util.Arrays;
 import java.io.*;
-import java.nio.file.Path;
 import java.util.Properties;
 
 /**
