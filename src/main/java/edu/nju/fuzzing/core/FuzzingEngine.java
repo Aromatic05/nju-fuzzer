@@ -1,9 +1,6 @@
 package edu.nju.fuzzing.core;
 
 import edu.nju.fuzzing.corpus.CorpusManager;
-import edu.nju.fuzzing.corpus.FileCorpusManager;
-import edu.nju.fuzzing.cov.BitmapSource;
-import edu.nju.fuzzing.cov.CoverageDiffStrategy;
 import edu.nju.fuzzing.cov.CoverageMonitor;
 import edu.nju.fuzzing.cov.ShmCoverageMonitor;
 import edu.nju.fuzzing.exec.CommandResolver;
@@ -188,13 +185,8 @@ public class FuzzingEngine {
                     if (tickSleepMs > 0) Thread.sleep(tickSleepMs);
                 }
             } finally {
-                // Close coverage monitor if it's AutoCloseable
-                if (coverageMonitor instanceof AutoCloseable closeable) {
-                    try {
-                        closeable.close();
-                    } catch (Exception e) {
-                        // Log but don't propagate
-                    }
+                if (coverageMonitor != null) {
+                    coverageMonitor.close();
                 }
             }
         } finally {
