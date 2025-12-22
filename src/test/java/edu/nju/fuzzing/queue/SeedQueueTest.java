@@ -83,4 +83,44 @@ public class SeedQueueTest {
         Assertions.assertTrue(hasSeedB, "Queue should contain seed_b.bin");
         Assertions.assertFalse(hasHidden, "Queue should NOT contain hidden files");
     }
+
+    /**
+     * 测试 3: 能否正确递归初始化包含子目录种子文件夹
+     * 验证 loadInitialSeeds 能深入子文件夹读取文件
+     */
+    @Test
+    public void testLoadRecursiveDirectory() throws IOException {
+        // --- 准备数据 ---
+        // 1. 根目录下的文件
+        Files.writeString(tempDir.resolve("root_seed.txt"), "root");
+
+        // 2. 创建第一层子目录
+        Path subDir1 = tempDir.resolve("subdir1");
+        Files.createDirectory(subDir1);
+        Files.writeString(subDir1.resolve("nested_seed_1.txt"), "nested1");
+
+        // 3. 创建第二层子目录 (深层嵌套)
+        Path subDir2 = subDir1.resolve("deepdir");
+        Files.createDirectory(subDir2);
+        Files.writeString(subDir2.resolve("deep_seed.txt"), "deep");
+
+        // 4. 创建一个空目录 (应该被安全忽略)
+        Files.createDirectory(tempDir.resolve("empty_dir"));
+
+        // --- 执行 ---
+        SeedQueue queue = new SeedQueue();
+        int count = queue.loadInitialSeeds(tempDir);
+
+        // --- 验证 ---
+        // root_seed + nested_seed_1 + deep_seed = 3 个
+        Assertions.assertEquals(3, count, "Should load 3 seeds recursively");
+        
+        List<Seed> seeds = queue.getSeeds();
+        
+        // 验证深层文件是否被读取
+        boolean hasDeepSeed = seeds.stream()
+                .anyMatch(s -> s.getFile().getName().equals("deep_seed.txt"));
+        
+        Assertions.assertTrue(hasDeepSeed, "Should find seed inside deep subdirectories");
+    }
 }
