@@ -29,7 +29,10 @@ public class Seed {
 
     public void saveMetadata() {
         // 元数据文件名：原文件名 + ".meta"
-        File metaFile = new File(file.getParent(), file.getName() + ".meta");
+        File parentDir = file.getParentFile();
+        File metaFile = (parentDir != null)
+            ? new File(parentDir, file.getName() + ".meta")
+            : new File(file.getName() + ".meta");
         
         Properties props = new Properties();
         
@@ -65,7 +68,10 @@ public class Seed {
         // 为了方便，我们假设这是一个新的 Seed，然后尝试覆盖它的字段
         // 注意：因为 Seed 的字段是 final 的，最好的方式是在构造前读取
         
-        File metaFile = new File(seedFile.getParent(), seedFile.getName() + ".meta");
+        File parentDir = seedFile.getParentFile();
+        File metaFile = (parentDir != null)
+            ? new File(parentDir, seedFile.getName() + ".meta")
+            : new File(seedFile.getName() + ".meta");
         
         String parentId = null;
         int depth = 0;
@@ -106,7 +112,7 @@ public class Seed {
     private Seed(File file, byte[] data, String parentId, int depth, String birthType, 
                  int handicap, boolean wasFuzzed, long execTime, int bitmapSize) {
         this.file = file;
-        this.data = data;
+        this.data = Arrays.copyOf(data, data.length);
         this.id = file.getName();
         this.parentId = parentId;
         this.depth = depth;
@@ -173,7 +179,9 @@ public class Seed {
 
     // --- Getters & Setters ---
     public File getFile() { return file; }
-    public byte[] getData() { return data; }
+    public byte[] getDataCopy() {
+        return Arrays.copyOf(data, data.length);
+    }
     public String getId() { return id; }
     public int getDepth() { return depth; }
     public String getParentId() { return parentId; }
