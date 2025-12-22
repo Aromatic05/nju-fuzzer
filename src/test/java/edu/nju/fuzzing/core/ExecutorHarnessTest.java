@@ -8,6 +8,8 @@ import edu.nju.fuzzing.exec.ProcessExecutor;
 import edu.nju.fuzzing.exec.TargetCommand;
 import edu.nju.fuzzing.model.Coverage;
 import edu.nju.fuzzing.model.CoverageEx;
+import edu.nju.fuzzing.model.ExecInput;
+import edu.nju.fuzzing.model.ExecResult;
 import edu.nju.fuzzing.model.RunResult;
 import edu.nju.fuzzing.model.TargetSpec;
 

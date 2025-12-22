@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.stream.Stream;
 
 class FuzzingEngineTest {
 
@@ -50,28 +51,43 @@ class FuzzingEngineTest {
 
         // 1) stats 文件存在且有数据行
         Path stats = workdir.resolve("stats/stats.csv");
-        assertTrue(Files.exists(stats));
+        assertTrue(Files.exists(stats), "stats.csv should exist");
         var lines = Files.readAllLines(stats);
         assertTrue(lines.size() >= 2, "stats.csv should contain header + at least one tick");
 
         // 2) inputs 目录至少有一个 testcase
         Path inputsDir = workdir.resolve("tmp/inputs");
-        assertTrue(Files.isDirectory(inputsDir));
-        var inputs = Files.list(inputsDir).collect(Collectors.toList());
-        assertFalse(inputs.isEmpty(), "inputs should not be empty");
+        assertTrue(Files.isDirectory(inputsDir), "inputs dir should exist");
+        try (Stream<Path> s = Files.list(inputsDir)) {
+            var inputs = s.collect(Collectors.toList());
+            assertFalse(inputs.isEmpty(), "inputs should not be empty");
+        }
 
-        // 3) exec logs 目录至少有一个 stdout.log 且包含关键字
+        // 3) exec logs 目录至少有一个 stdout_<id>.log 且包含关键字
         Path logsDir = workdir.resolve("tmp/exec-logs");
-        assertTrue(Files.isDirectory(logsDir));
+        assertTrue(Files.isDirectory(logsDir), "exec-logs dir should exist");
 
-        // 找到任意一个 stdout.log
-        var stdoutLogs = Files.walk(logsDir)
-                .filter(p -> p.getFileName().toString().equals("stdout.log"))
-                .collect(Collectors.toList());
+        List<Path> stdoutLogs;
+        try (Stream<Path> w = Files.walk(logsDir)) {
+            stdoutLogs = w
+                    .filter(Files::isRegularFile)
+                    .filter(p -> {
+                        String name = p.getFileName().toString();
+                        return name.startsWith("stdout_") && name.endsWith(".log");
+                    })
+                    .collect(Collectors.toList());
+        }
 
-        assertFalse(stdoutLogs.isEmpty(), "should produce stdout.log");
+        assertFalse(stdoutLogs.isEmpty(), "should produce stdout_<id>.log");
 
-        String stdout = Files.readString(stdoutLogs.get(0), StandardCharsets.UTF_8);
-        assertTrue(stdout.contains("hello-from-engine"), "stdout should contain expected payload");
+        boolean foundExpected = false;
+        for (Path p : stdoutLogs) {
+            String stdout = Files.readString(p, StandardCharsets.UTF_8);
+            if (stdout.contains("hello-from-engine")) {
+                foundExpected = true;
+                break;
+            }
+        }
+        assertTrue(foundExpected, "stdout should contain expected payload");
     }
 }
