@@ -1,4 +1,4 @@
-package edu.nju.fuzzing.core;
+package edu.nju.fuzzing.model;
 
 import edu.nju.fuzzing.exec.TargetCommand;
 

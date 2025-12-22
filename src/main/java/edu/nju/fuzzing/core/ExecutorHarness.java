@@ -1,5 +1,8 @@
 package edu.nju.fuzzing.core;
 
+import edu.nju.fuzzing.model.ExecInput;
+import edu.nju.fuzzing.model.ExecResult;
+
 /**
  * Standard execution environment that integrates execution and coverage monitoring.
  * 

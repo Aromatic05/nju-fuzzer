@@ -1,7 +1,4 @@
-package edu.nju.fuzzing.core;
-
-import edu.nju.fuzzing.model.CoverageEx;
-import edu.nju.fuzzing.model.RunResult;
+package edu.nju.fuzzing.model;
 
 /**
  * Result of a single execution, combining runtime result and coverage information.
