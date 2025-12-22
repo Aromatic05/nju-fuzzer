@@ -197,4 +197,8 @@ public class Seed {
     public byte[] getData() {
         return this.data;
     }
+
+    public byte[] getDataCopy() {
+        return Arrays.copyOf(data, data.length);
+    }
 }
