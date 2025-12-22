@@ -44,4 +44,43 @@ public class SeedQueueTest {
         Assertions.assertEquals("manual_seed.txt", retrieved.getFile().getName());
         Assertions.assertArrayEquals(data, retrieved.getData());
     }
+
+    /**
+     * 测试 2: 能否正确初始化种子（扁平目录）
+     * 验证 loadInitialSeeds 能读取当前目录下的文件，且忽略隐藏文件
+     */
+    @Test
+    public void testLoadFlatDirectory() throws IOException {
+        // --- 准备数据 ---
+        // 1. 创建正常种子 A
+        Path seedA = tempDir.resolve("seed_a.txt");
+        Files.writeString(seedA, "AAAA");
+
+        // 2. 创建正常种子 B
+        Path seedB = tempDir.resolve("seed_b.bin");
+        Files.write(seedB, new byte[]{0x01, 0x02});
+
+        // 3. 创建隐藏文件 (应该被忽略)
+        Path hidden = tempDir.resolve(".DS_Store");
+        Files.writeString(hidden, "junk");
+
+        // --- 执行 ---
+        SeedQueue queue = new SeedQueue();
+        int count = queue.loadInitialSeeds(tempDir);
+
+        // --- 验证 ---
+        // 期望只加载 A 和 B，共 2 个
+        Assertions.assertEquals(2, count, "Should load exactly 2 visible files");
+        Assertions.assertEquals(2, queue.size());
+
+        List<Seed> seeds = queue.getSeeds();
+        // 检查文件名是否存在
+        boolean hasSeedA = seeds.stream().anyMatch(s -> s.getFile().getName().equals("seed_a.txt"));
+        boolean hasSeedB = seeds.stream().anyMatch(s -> s.getFile().getName().equals("seed_b.bin"));
+        boolean hasHidden = seeds.stream().anyMatch(s -> s.getFile().getName().equals(".DS_Store"));
+
+        Assertions.assertTrue(hasSeedA, "Queue should contain seed_a.txt");
+        Assertions.assertTrue(hasSeedB, "Queue should contain seed_b.bin");
+        Assertions.assertFalse(hasHidden, "Queue should NOT contain hidden files");
+    }
 }
