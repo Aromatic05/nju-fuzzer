@@ -6,7 +6,7 @@ package edu.nju.fuzzing.cov;
  * This extends the basic DiffResult with:
  * - New edge indices (not just count)
  * - All hit edge indices
- * - Stability information
+ * - Non-zero bytes count (bitmap-level)
  * 
  * Used by CoverageDB for topRated/favored calculations.
  */
@@ -26,6 +26,12 @@ public record DiffResultEx(
          * All edges hit in this execution (non-zero bytes in bitmap).
          */
         EdgeSet hitEdges,
+        
+        /**
+         * Number of non-zero bytes in bitmap (AFL++ style counting).
+         * This may differ from hitEdges.size() depending on strategy.
+         */
+        int nonZeroBytes,
 
         /**
          * Whether this execution discovered new coverage.
@@ -42,17 +48,18 @@ public record DiffResultEx(
      * Empty result with no coverage.
      */
     public static final DiffResultEx EMPTY = new DiffResultEx(
-            0, EdgeSet.empty(), EdgeSet.empty(), false, 0L
+            0, EdgeSet.empty(), EdgeSet.empty(), 0, false, 0L
     );
 
     /**
      * Creates a result from basic diff info (backward compatible).
      */
-    public static DiffResultEx fromBasic(int newCount, boolean interesting) {
+    public static DiffResultEx fromBasic(int newCount, boolean interesting, int nonZeroBytes) {
         return new DiffResultEx(
                 newCount,
                 EdgeSet.empty(),  // No edge detail
                 EdgeSet.empty(),
+                nonZeroBytes,
                 interesting,
                 0L
         );
@@ -61,11 +68,12 @@ public record DiffResultEx(
     /**
      * Creates a result with full edge information.
      */
-    public static DiffResultEx of(EdgeSet newEdges, EdgeSet hitEdges, long bitmapHash) {
+    public static DiffResultEx of(EdgeSet newEdges, EdgeSet hitEdges, int nonZeroBytes, long bitmapHash) {
         return new DiffResultEx(
                 newEdges.size(),
                 newEdges,
                 hitEdges,
+                nonZeroBytes,
                 !newEdges.isEmpty(),
                 bitmapHash
         );

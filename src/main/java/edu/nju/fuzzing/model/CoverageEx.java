@@ -3,8 +3,6 @@ package edu.nju.fuzzing.model;
 import edu.nju.fuzzing.cov.EdgeSet;
 import edu.nju.fuzzing.cov.DiffResultEx;
 
-import java.util.concurrent.atomic.AtomicLong;
-
 /**
  * Extended coverage data with edge-level detail for seed scheduling.
  * 
@@ -14,9 +12,12 @@ import java.util.concurrent.atomic.AtomicLong;
  * - Stability flag
  * 
  * Used by CoverageDB and PowerScheduler for advanced scheduling.
+ * 
+ * IMPORTANT: execId should be generated externally by the execution harness,
+ * not internally by this class, to ensure consistency across components.
  */
 public record CoverageEx(
-        /** Unique execution identifier */
+        /** Unique execution identifier (from harness) */
         long execId,
 
         /** Timestamp when coverage was collected */
@@ -25,11 +26,11 @@ public record CoverageEx(
         /** Size of the coverage bitmap */
         int mapSize,
 
-        /** Number of non-zero bytes in current bitmap (total edges hit) */
+        /** Number of non-zero bytes in bitmap (AFL++ style counting) */
         int nonZeroBytes,
 
-        /** Number of newly covered bytes/edges */
-        int newBytes,
+        /** Number of newly covered edges */
+        int newEdgeCount,
 
         /** Hash of the bitmap for quick comparison */
         long bitmapHash,
@@ -46,46 +47,80 @@ public record CoverageEx(
         /** Execution time in nanoseconds (for perf scoring) */
         long execTimeNanos,
 
-        /** Whether this trace is stable (same coverage on re-execution) */
-        boolean stable
+        /** Stability status of this trace */
+        Stability stability
 ) {
-    private static final AtomicLong EXEC_ID_COUNTER = new AtomicLong(0);
-
-    /** Default map size */
-    public static final int DEFAULT_MAP_SIZE = 65536;
+    /**
+     * Stability status for coverage traces.
+     */
+    public enum Stability {
+        /** Stability not yet determined */
+        UNKNOWN,
+        /** Trace is stable (same coverage on re-execution) */
+        STABLE,
+        /** Trace is unstable (different coverage on re-execution) */
+        UNSTABLE
+    }
 
     /**
      * Creates an empty coverage (no coverage data available).
+     * 
+     * @param execId Execution ID from harness
+     * @param mapSize Coverage map size
+     * @param execTimeNanos Execution time in nanoseconds
      */
-    public static CoverageEx empty(RunResult result) {
+    public static CoverageEx empty(long execId, int mapSize, long execTimeNanos) {
         return new CoverageEx(
-                EXEC_ID_COUNTER.incrementAndGet(),
+                execId,
                 System.currentTimeMillis(),
-                DEFAULT_MAP_SIZE,
+                mapSize,
                 0, 0, 0L, false,
                 EdgeSet.empty(),
                 EdgeSet.empty(),
-                result != null ? result.execTimeMs() * 1_000_000L : 0L,
-                true
+                execTimeNanos,
+                Stability.UNKNOWN
         );
     }
 
     /**
-     * Creates CoverageEx from DiffResultEx.
+     * Creates CoverageEx from DiffResultEx and RunResult.
+     * 
+     * @param diff Diff result with edge information
+     * @param result Run result with execution metadata
+     * @param stability Stability status (UNKNOWN if not checked)
      */
-    public static CoverageEx from(DiffResultEx diff, RunResult result, int mapSize) {
+    public static CoverageEx from(DiffResultEx diff, RunResult result, Stability stability) {
         return new CoverageEx(
-                EXEC_ID_COUNTER.incrementAndGet(),
+                result.execId(),
                 System.currentTimeMillis(),
-                mapSize,
-                diff.hitEdges().size(),
+                result.inputFile() != null ? 65536 : 65536, // TODO: get from monitor
+                diff.nonZeroBytes(),
                 diff.newCount(),
                 diff.bitmapHash(),
                 diff.interesting(),
                 diff.hitEdges(),
                 diff.newEdges(),
-                result != null ? result.execTimeMs() * 1_000_000L : 0L,
-                true  // Assume stable by default
+                result.execTimeNanos(),
+                stability
+        );
+    }
+    
+    /**
+     * Creates CoverageEx from DiffResultEx and RunResult with UNKNOWN stability.
+     */
+    public static CoverageEx from(DiffResultEx diff, RunResult result, int mapSize) {
+        return new CoverageEx(
+                result.execId(),
+                System.currentTimeMillis(),
+                mapSize,
+                diff.nonZeroBytes(),
+                diff.newCount(),
+                diff.bitmapHash(),
+                diff.interesting(),
+                diff.hitEdges(),
+                diff.newEdges(),
+                result.execTimeNanos(),
+                Stability.UNKNOWN
         );
     }
 
@@ -93,25 +128,27 @@ public record CoverageEx(
      * Creates CoverageEx with all fields specified.
      */
     public static CoverageEx of(
+            long execId,
             int mapSize,
             EdgeSet hitEdges,
             EdgeSet newEdges,
+            int nonZeroBytes,
             long bitmapHash,
             long execTimeNanos,
-            boolean stable
+            Stability stability
     ) {
         return new CoverageEx(
-                EXEC_ID_COUNTER.incrementAndGet(),
+                execId,
                 System.currentTimeMillis(),
                 mapSize,
-                hitEdges.size(),
+                nonZeroBytes,
                 newEdges.size(),
                 bitmapHash,
                 !newEdges.isEmpty(),
                 hitEdges,
                 newEdges,
                 execTimeNanos,
-                stable
+                stability
         );
     }
 
@@ -124,7 +161,7 @@ public record CoverageEx(
                 timestampMillis,
                 mapSize,
                 nonZeroBytes,
-                newBytes,
+                newEdgeCount,
                 bitmapHash,
                 interesting
         );
@@ -145,7 +182,7 @@ public record CoverageEx(
                 EdgeSet.empty(),
                 EdgeSet.empty(),
                 0L,
-                true
+                Stability.UNKNOWN
         );
     }
 
@@ -157,21 +194,40 @@ public record CoverageEx(
     }
 
     /**
-     * Returns the new edge count (alias for newEdges.size()).
-     */
-    public int newEdgeCount() {
-        return newEdges.size();
-    }
-
-    /**
      * Marks this coverage as unstable.
      */
     public CoverageEx markUnstable() {
         return new CoverageEx(
                 execId, timestampMillis, mapSize,
-                nonZeroBytes, newBytes, bitmapHash, interesting,
+                nonZeroBytes, newEdgeCount, bitmapHash, interesting,
                 hitEdges, newEdges, execTimeNanos,
-                false
+                Stability.UNSTABLE
         );
+    }
+    
+    /**
+     * Marks this coverage as stable.
+     */
+    public CoverageEx markStable() {
+        return new CoverageEx(
+                execId, timestampMillis, mapSize,
+                nonZeroBytes, newEdgeCount, bitmapHash, interesting,
+                hitEdges, newEdges, execTimeNanos,
+                Stability.STABLE
+        );
+    }
+    
+    /**
+     * Checks if this trace is stable.
+     */
+    public boolean isStable() {
+        return stability == Stability.STABLE;
+    }
+    
+    /**
+     * Checks if this trace is unstable.
+     */
+    public boolean isUnstable() {
+        return stability == Stability.UNSTABLE;
     }
 }

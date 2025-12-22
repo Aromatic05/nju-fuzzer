@@ -89,9 +89,9 @@ class CorpusIntegrationTest {
         byte[] crashInput = "crash".getBytes();
         byte[] hangInput = "hang".getBytes();
         
-        RunResult crashResult = new RunResult(null, 50, 139, false, 
+        RunResult crashResult = RunResult.of(1L, null, 50, 139, false, 
                 RunResult.Termination.ERROR, null, null);
-        RunResult hangResult = new RunResult(null, 5000, -1, true, 
+        RunResult hangResult = RunResult.of(1L, null, 5000, -1, true, 
                 RunResult.Termination.TIMEOUT, null, null);
         
         Path crashPath = corpusManager.saveCrash(crashInput, crashResult);

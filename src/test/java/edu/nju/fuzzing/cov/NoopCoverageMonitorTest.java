@@ -13,7 +13,7 @@ class NoopCoverageMonitorTest {
     @Test
     void testAfterRunReturnsEmptyCoverage() {
         CoverageMonitor monitor = new NoopCoverageMonitor();
-        RunResult result = new RunResult(
+        RunResult result = RunResult.of(1L, 
                 Path.of("/tmp/test.bin"),
                 1000L,
                 0,
@@ -34,7 +34,7 @@ class NoopCoverageMonitorTest {
         CoverageMonitor monitor = new NoopCoverageMonitor();
         long firstExecId = -1;
         for (int i = 0; i < 10; i++) {
-            RunResult result = new RunResult(
+            RunResult result = RunResult.of(1L, 
                     Path.of("/tmp/test_" + i + ".bin"),
                     1000L,
                     0,
