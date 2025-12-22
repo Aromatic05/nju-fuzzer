@@ -1,22 +1,20 @@
 package edu.nju.fuzzing.model;
 
-import java.io.*;
 import java.util.Arrays;
 
+/**
+ * Testcase (DTO)
+ * 纯粹的数据载体，不包含 IO 逻辑。
+ */
 public record Testcase(
-        byte[] data,
-        Seed parent,
-        String description
+        byte[] data,        // 核心数据
+        Seed parent,        // 父节点引用
+        String description  // 变异描述
 ) {
+    // 唯一的逻辑只是为了保护数据的安全性
     public byte[] getDataCopy() {
         return Arrays.copyOf(data, data.length);
     }
 
-    // 必须有这个！否则 C 程序读不到数据
-    public void saveToFile(File targetFile) throws IOException {
-        // 使用 BufferedOutputStream 减少 IO 系统调用开销
-        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(targetFile))) {
-            bos.write(data);
-        } // try-with-resources 会自动 flush 和 close
-    }
+    // 如果你很在意性能，且能保证外部不修改，可以直接用 record 自带的 data()
 }
