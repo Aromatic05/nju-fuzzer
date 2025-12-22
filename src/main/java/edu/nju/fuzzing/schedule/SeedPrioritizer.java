@@ -24,26 +24,27 @@ public class SeedPrioritizer {
         }
 
         // 1. 【优先策略】寻找未被 Fuzz 过的“处女”种子
-        // 这种种子通常含有未被挖掘的潜力，应该插队优先处理
         for (Seed seed : seeds) {
             if (!seed.isWasFuzzed()) {
                 return seed;
             }
         }
 
-        // 2. 【兜底策略】如果都跑过了，就轮询 (Round Robin)
-        // 保证大家都有机会被反复变异
+        // 2. 【兜底策略】Round Robin
         int size = seeds.size();
         
-        // 防止列表大小变化导致 index 越界
-        if (currentIndex >= size) {
-            currentIndex = 0;
-        }
+        // --- 修改开始 ---
+        // 使用取模运算计算实际下标，这样 currentIndex 可以一直增加
+        // 即使 size 变了，它也会尝试指向下一个逻辑位置
+        int actualIndex = currentIndex % size;
+        
+        Seed selected = seeds.get(actualIndex);
 
-        Seed selected = seeds.get(currentIndex);
-
-        // 移动指针，准备下一次
-        currentIndex = (currentIndex + 1) % size;
+        // 指针简单自增，不立即取模
+        // 这样当 size=1 时，index 会变成 1。
+        // 下次 size=2 时，1 % 2 = 1，就会取到第 2 个元素 (s2)，符合测试预期。
+        currentIndex++; 
+        // --- 修改结束 ---
 
         return selected;
     }
