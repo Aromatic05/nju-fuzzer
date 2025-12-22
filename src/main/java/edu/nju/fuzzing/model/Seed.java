@@ -179,9 +179,6 @@ public class Seed {
 
     // --- Getters & Setters ---
     public File getFile() { return file; }
-    public byte[] getDataCopy() {
-        return Arrays.copyOf(data, data.length);
-    }
     public String getId() { return id; }
     public int getDepth() { return depth; }
     public String getParentId() { return parentId; }
@@ -195,5 +192,9 @@ public class Seed {
     @Override
     public String toString() {
         return String.format("Seed[id=%s, depth=%d, score=%d]", id, depth, bitmapSize);
+    }
+
+    public byte[] getData() {
+        return this.data;
     }
 }
