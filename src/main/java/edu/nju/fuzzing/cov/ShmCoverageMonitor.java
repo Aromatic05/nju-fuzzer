@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * - Coverage diff calculation using "seen non-zero bytes" strategy
  * - Statistics tracking for monitoring fuzzing progress
  */
-public class ShmCoverageMonitor implements CoverageMonitor, AutoCloseable {
+public class ShmCoverageMonitor implements CoverageMonitor {
 
     private final BitmapSource bitmapSource;
     private final CoverageDiffStrategy diffStrategy;

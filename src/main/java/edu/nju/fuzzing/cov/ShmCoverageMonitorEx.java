@@ -11,7 +11,7 @@ import edu.nju.fuzzing.model.RunResult;
  * - Integrates with CoverageDB for scheduling support
  * - Supports stability detection
  */
-public class ShmCoverageMonitorEx implements CoverageMonitorEx, AutoCloseable {
+public class ShmCoverageMonitorEx implements CoverageMonitorEx {
 
     private final BitmapSource bitmapSource;
     private final CoverageDiffStrategyEx strategy;
