@@ -11,100 +11,140 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class ProcessExecutor implements Executor {
-    
+
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(1);
+    private static final long KILL_GRACE_MS = 100;
+    private static final long FORCE_KILL_GRACE_MS = 200;
+
     private final AtomicLong execIdCounter = new AtomicLong(0);
 
     @Override
     public RunResult run(TargetCommand cmd, byte[] stdinData, Duration timeout, Path outDir) throws Exception {
-        long execId = execIdCounter.incrementAndGet();
-        
         if (cmd == null) throw new IllegalArgumentException("cmd is null");
-        if (timeout == null) timeout = Duration.ofSeconds(1);
         if (outDir == null) throw new IllegalArgumentException("outDir is null");
+
+        long execId = execIdCounter.incrementAndGet();
+        Duration effectiveTimeout = (timeout == null) ? DEFAULT_TIMEOUT : timeout;
+
+        // Avoid zero/negative timeouts causing immediate waitFor(0)
+        long timeoutMs = Math.max(1L, effectiveTimeout.toMillis());
 
         Files.createDirectories(outDir);
 
-        // logs
-        Path stdoutFile = outDir.resolve("stdout.log");
-        Path stderrFile = outDir.resolve("stderr.log");
+        // logs: include execId to avoid overwriting across runs
+        Path stdoutFile = outDir.resolve("stdout_" + execId + ".log");
+        Path stderrFile = outDir.resolve("stderr_" + execId + ".log");
 
         ProcessBuilder pb = new ProcessBuilder(cmd.argv());
+
+        // stdout/stderr redirection (always to files in this executor implementation)
         pb.redirectOutput(stdoutFile.toFile());
         pb.redirectError(stderrFile.toFile());
 
+        // Ensure we can write stdin (PIPE) when needed; we'll close it otherwise
+        pb.redirectInput(ProcessBuilder.Redirect.PIPE);
+
         // env
         Map<String, String> env = pb.environment();
-        env.putAll(cmd.env());
-
-        long startNs = System.nanoTime();
-        Process p = pb.start();
-
-        // stdin handling
-        if (cmd.inputMode() == InputMode.STDIN) {
-            // stdinData may be null -> treat as empty
-            byte[] data = (stdinData == null) ? new byte[0] : stdinData;
-            OutputStream os = p.getOutputStream();
-            try {
-                try {
-                    os.write(data);
-                    os.flush();
-                } catch (java.io.IOException e) {
-                    // Child process may have exited (e.g. crashed) before or during write.
-                    // This manifests as a Broken pipe on some platforms/CI. Ignore and proceed.
-                }
-            } finally {
-                try {
-                    os.close();
-                } catch (Exception ignored) {
-                    // ignore close errors (Broken pipe may surface here on some platforms)
-                }
-            }
-        } else {
-            // FILE mode: no stdin required; close to avoid target waiting on stdin
-            try {
-                p.getOutputStream().close();
-            } catch (Exception ignored) {}
+        if (cmd.env() != null && !cmd.env().isEmpty()) {
+            env.putAll(cmd.env());
         }
 
-        boolean finished = p.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
-        long execTimeNs = System.nanoTime() - startNs;
-        long execTimeMs = execTimeNs / 1_000_000;
+        long startNs = System.nanoTime();
+        Process p = null;
 
-        if (!finished) {
-            // timeout: kill process
-            p.destroy();
-            // give it a short grace period
-            boolean exited = p.waitFor(100, TimeUnit.MILLISECONDS);
-            if (!exited) {
-                p.destroyForcibly();
-                p.waitFor(200, TimeUnit.MILLISECONDS);
+        try {
+            p = pb.start();
+
+            // stdin handling
+            if (cmd.inputMode() == InputMode.STDIN) {
+                byte[] data = (stdinData == null) ? new byte[0] : stdinData;
+
+                try (OutputStream os = p.getOutputStream()) {
+                    try {
+                        os.write(data);
+                        os.flush();
+                    } catch (java.io.IOException ignored) {
+                        // Child may crash/exit before or during write (broken pipe). Ignore and proceed.
+                    }
+                } catch (Exception ignored) {
+                    // Ignore close/write exceptions to avoid masking target failures.
+                }
+            } else {
+                // FILE mode: close stdin to avoid target blocking on stdin
+                try {
+                    p.getOutputStream().close();
+                } catch (Exception ignored) {
+                }
             }
+
+            boolean finished = p.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
+            long execTimeNs = System.nanoTime() - startNs;
+            long execTimeMs = execTimeNs / 1_000_000;
+
+            if (!finished) {
+                // timeout: kill process
+                terminateProcess(p);
+
+                return new RunResult(
+                        execId,
+                        cmd.inputFile(),
+                        execTimeMs,
+                        execTimeNs,
+                        -1,
+                        true,
+                        RunResult.Termination.TIMEOUT,
+                        stdoutFile,
+                        stderrFile
+                );
+            }
+
+            int exitCode = p.exitValue();
+            RunResult.Termination term = (exitCode == 0)
+                    ? RunResult.Termination.NORMAL
+                    : RunResult.Termination.ERROR;
+
             return new RunResult(
                     execId,
                     cmd.inputFile(),
                     execTimeMs,
                     execTimeNs,
-                    -1,
-                    true,
-                    RunResult.Termination.TIMEOUT,
+                    exitCode,
+                    false,
+                    term,
                     stdoutFile,
                     stderrFile
             );
+
+        } catch (Exception e) {
+            // If the process was started but we failed mid-way, ensure it's cleaned up.
+            if (p != null) {
+                try {
+                    terminateProcess(p);
+                } catch (Exception ignored) {
+                }
+            }
+            throw e;
+        }
+    }
+
+    private static void terminateProcess(Process p) {
+        if (!p.isAlive()) return;
+
+        // Try graceful
+        p.destroy();
+        try {
+            if (p.waitFor(KILL_GRACE_MS, TimeUnit.MILLISECONDS)) return;
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
 
-        int exitCode = p.exitValue();
-        RunResult.Termination term = (exitCode == 0) ? RunResult.Termination.NORMAL : RunResult.Termination.ERROR;
-
-        return new RunResult(
-                execId,
-                cmd.inputFile(),
-                execTimeMs,
-                execTimeNs,
-                exitCode,
-                false,
-                term,
-                stdoutFile,
-                stderrFile
-        );
+        // Force kill
+        p.destroyForcibly();
+        try {
+            p.waitFor(FORCE_KILL_GRACE_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
     }
 }
