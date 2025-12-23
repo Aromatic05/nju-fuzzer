@@ -144,7 +144,7 @@ try {
 
       // 4) execute + collect coverage (beforeRun/run/afterRun inside harness)
       ExecResult er = harness.execute(tc);
-
+      
       // 5) handle abnormal terminations first
       if (er.run().termination() == Termination.TIMEOUT) {
         corpus.saveHang(tc, er, parent);
