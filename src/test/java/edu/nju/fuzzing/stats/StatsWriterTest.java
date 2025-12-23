@@ -42,12 +42,13 @@ class StatsWriterTest {
         List<String> lines = Files.readAllLines(csvPath);
         
         assertFalse(lines.isEmpty());
-        // Verify Header Spec: timestamp,target_name,exec_count,covered_edges,execs_per_sec,queue_size,crash_count
-        assertEquals("timestamp,target_name,exec_count,covered_edges,execs_per_sec,queue_size,crash_count", lines.get(0));
+        // [修改] 验证包含新的列名
+        assertEquals("timestamp,target_name,exec_count,covered_edges,execs_per_sec,queue_size,total_paths,crash_count,hang_count", lines.get(0));
     }
 
     @Test
     void shouldAppendDataRowCorrectly() throws IOException {
+        // 使用兼容构造函数，totalPaths 默认为 0
         StatsTick tick = new StatsTick("target_1", 10, 500, 100, 50.5, 5, 0, 0, 0);
         writer.tick(tick);
         writer.close();
@@ -55,9 +56,10 @@ class StatsWriterTest {
         List<String> lines = Files.readAllLines(csvPath);
         assertEquals(2, lines.size()); // Header + 1 Row
         
-        // Check CSV content format: 10,target_1,500,100,50.50,5,0
+        // [修改] 验证数据行包含 total_paths(0) 和 hang_count(0)
+        // 格式: 10,target_1,500,100,50.50,5,0,0,0
         String row = lines.get(1);
-        assertEquals("10,target_1,500,100,50.50,5,0", row);
+        assertEquals("10,target_1,500,100,50.50,5,0,0,0", row);
     }
 
     @Test
@@ -72,7 +74,7 @@ class StatsWriterTest {
 
         List<String> lines = Files.readAllLines(csvPath);
         assertEquals(1, lines.stream().filter(l -> l.startsWith("timestamp")).count(), "Header should appear only once");
-        assertEquals(1, lines.size() - 1, "Should have 1 row (initial empty run) + 1 new row? Actually 1 row total from second write");
+        assertEquals(1, lines.size() - 1, "Should have 1 row (from second write)");
     }
 
     // --- 协同工作测试 ---
@@ -94,6 +96,7 @@ class StatsWriterTest {
     @Test
     void shouldHandleMultipleTicks() throws IOException {
         for (int i = 0; i < 5; i++) {
+            // 注意：这里使用了兼容构造函数
             writer.tick(new StatsTick("t", i, i*10, i*2, 1.0, 0, 0, 0, 0));
         }
         writer.close();
@@ -115,23 +118,18 @@ class StatsWriterTest {
 
     @Test
     void shouldHandleCommaInTargetName() throws IOException {
-        // Note: Basic CSV implementation might break on commas. 
-        // This test checks behavior. Ideally target names shouldn't have commas.
         StatsTick tick = new StatsTick("bad,name", 0,0,0,0,0,0,0,0);
         writer.tick(tick);
         writer.close();
         
         String row = Files.readAllLines(csvPath).get(1);
-        // Expect standard formatting (might produce bad CSV if not escaped, but checking output consistency)
         assertTrue(row.contains("bad,name"));
     }
     
     @Test
     void shouldFlushDataImmediately() throws IOException {
-        // StatsWriter calls flush() after every tick
         writer.tick(new StatsTick("t", 1,1,1,1,1,1,1,1));
         
-        // Read directly without closing writer
         List<String> lines = Files.readAllLines(csvPath);
         assertEquals(2, lines.size(), "Should have flushed data to disk");
     }
