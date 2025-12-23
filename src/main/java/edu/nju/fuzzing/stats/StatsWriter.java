@@ -20,24 +20,26 @@ public class StatsWriter implements AutoCloseable {
                 StandardOpenOption.APPEND
         );
         
-        // [严格对齐规范] 写入 CSV Header
+        // [修改] Header 增加 total_paths 和 hang_count
         if (!exists) {
-            writer.write("timestamp,target_name,exec_count,covered_edges,execs_per_sec,queue_size,crash_count\n");
+            writer.write("timestamp,target_name,exec_count,covered_edges,execs_per_sec,queue_size,total_paths,crash_count,hang_count\n");
             writer.flush();
         }
     }
 
     public void tick(StatsTick t) throws IOException {
-        // [严格对齐规范] 写入数据行
+        // [修改] 写入数据增加 t.totalPaths() 和 t.hangs()
         writer.write(String.format(
-                "%d,%s,%d,%d,%.2f,%d,%d%n",
+                "%d,%s,%d,%d,%.2f,%d,%d,%d,%d%n",
                 t.elapsedSec(),
                 t.targetName(),
                 t.execsTotal(),
                 t.coveredEdges(),
                 t.execsPerSec(),
                 t.queueSize(),
-                t.crashes()
+                t.totalPaths(), // [新增]
+                t.crashes(),
+                t.hangs()       // [新增]
         ));
         writer.flush();
     }
