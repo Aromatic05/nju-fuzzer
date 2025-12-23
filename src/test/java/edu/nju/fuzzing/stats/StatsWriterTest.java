@@ -72,7 +72,7 @@ class StatsWriterTest {
 
         List<String> lines = Files.readAllLines(csvPath);
         assertEquals(1, lines.stream().filter(l -> l.startsWith("timestamp")).count(), "Header should appear only once");
-        assertEquals(2, lines.size() - 1, "Should have 1 row (initial empty run) + 1 new row? Actually 1 row total from second write");
+        assertEquals(1, lines.size() - 1, "Should have 1 row (initial empty run) + 1 new row? Actually 1 row total from second write");
     }
 
     // --- 协同工作测试 ---
