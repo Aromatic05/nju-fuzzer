@@ -7,14 +7,13 @@ import java.util.Random;
 
 /**
  * 底层变异算子集合 (Stateless Utility Class)
- * 严格对应 AFL 文档中的原子操作
+ * 严格对应 AFL 文档中的原子操作，并增加了字典(Token)操作支持。
  */
 public class MutationOps {
 
     private static final Random random = new Random();
 
     // === Interesting Values (AFL 经典“魔术数字”) ===
-    // 这些值极易触发 Integer Overflow, Off-by-one, Signed/Unsigned 错误
     private static final byte[] INTERESTING_8 = {
             -128, -1, 0, 1, 16, 32, 64, 100, 127
     };
@@ -45,7 +44,6 @@ public class MutationOps {
     }
 
     // --- 3. Arith (算术加减) ---
-    // 随机加减一个小整数，试图突破 if (x < 10) 这种边界
     public static byte[] arithByte(byte[] data) {
         if (data.length == 0) return data;
         byte[] res = data.clone();
@@ -57,13 +55,11 @@ public class MutationOps {
     }
 
     // --- 4. Interest (特殊值替换) ---
-    // 随机选择 8/16/32 位并替换为魔术数字，支持大小端
     public static byte[] setInteresting(byte[] data) {
         if (data.length == 0) return data;
         byte[] res = data.clone();
         int width = random.nextInt(3); // 0=8bit, 1=16bit, 2=32bit
 
-        // 长度校验
         if (width == 2 && res.length < 4) width = 1;
         if (width == 1 && res.length < 2) width = 0;
 
@@ -83,7 +79,6 @@ public class MutationOps {
     }
 
     // --- 5. Block Operations (Havoc 必备) ---
-    // 这些操作会改变文件大小，破坏结构，对图片/二进制解析器特别有效
 
     public static byte[] deleteBlock(byte[] data) {
         if (data.length < 2) return data;
@@ -99,7 +94,6 @@ public class MutationOps {
     public static byte[] insertBlock(byte[] data) {
         int len = 1 + random.nextInt(32);
         byte[] block = new byte[len];
-        // 插入随机数据或重复字节
         if (random.nextBoolean()) random.nextBytes(block);
         else Arrays.fill(block, (byte) random.nextInt(256));
 
@@ -119,9 +113,39 @@ public class MutationOps {
         int start = random.nextInt(data.length - len + 1);
 
         byte[] block = new byte[len];
-        random.nextBytes(block); // 或者取自字典
+        random.nextBytes(block);
 
         System.arraycopy(block, 0, res, start, len);
+        return res;
+    }
+
+    // --- [新增] 6. Token/Dictionary Operations (配合增强版 Havoc) ---
+
+    /**
+     * 字典替换: 将数据中的某一段替换为关键字 (Token)
+     */
+    public static byte[] overwriteToken(byte[] data, byte[] token) {
+        if (data.length < token.length) return data; // 数据太短不够换，直接返回
+        byte[] res = data.clone();
+
+        // 随机选一个位置
+        int idx = random.nextInt(res.length - token.length + 1);
+        System.arraycopy(token, 0, res, idx, token.length);
+        return res;
+    }
+
+    /**
+     * 字典插入: 将关键字 (Token) 插入到数据中
+     */
+    public static byte[] insertToken(byte[] data, byte[] token) {
+        byte[] res = new byte[data.length + token.length];
+
+        int idx = (data.length == 0) ? 0 : random.nextInt(data.length + 1);
+
+        if (idx > 0) System.arraycopy(data, 0, res, 0, idx);
+        System.arraycopy(token, 0, res, idx, token.length);
+        if (idx < data.length) System.arraycopy(data, idx, res, idx + token.length, data.length - idx);
+
         return res;
     }
 }

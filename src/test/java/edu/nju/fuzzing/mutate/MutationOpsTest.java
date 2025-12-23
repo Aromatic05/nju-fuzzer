@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -111,6 +112,56 @@ class MutationOpsTest {
         // 验证 MutationOps 内部并没有抛出异常
         for (int i = 0; i < 100; i++) {
             MutationOps.setInteresting(data);
+        }
+    }
+    // === 新增测试样例 ===
+
+    private final byte[] token = "TEST".getBytes(StandardCharsets.UTF_8);
+    @Test
+    void testOverwriteToken_ShouldReplaceBytes() {
+        // data: Hello World (11 bytes)
+        // token: TEST (4 bytes)
+        byte[] mutated = MutationOps.overwriteToken(data, token);
+
+        Assertions.assertEquals(data.length, mutated.length, "OverwriteToken 不应改变长度");
+        String s = new String(mutated);
+        // 应该包含 "TEST"
+        Assertions.assertTrue(s.contains("TEST"), "结果中应包含 Token");
+    }
+
+    @Test
+    void testOverwriteToken_DataTooShort() {
+        // 只有 1 个字节，塞不进 4 个字节的 Token
+        byte[] smallData = new byte[]{'A'};
+        byte[] mutated = MutationOps.overwriteToken(smallData, token);
+
+        // 期望：原样返回，不报错
+        Assertions.assertArrayEquals(smallData, mutated);
+    }
+
+    @Test
+    void testInsertToken_ShouldIncreaseLength() {
+        byte[] mutated = MutationOps.insertToken(data, token);
+
+        Assertions.assertEquals(data.length + token.length, mutated.length, "InsertToken 后长度应增加");
+        String s = new String(mutated);
+        Assertions.assertTrue(s.contains("TEST"));
+    }
+
+    @Test
+    void testInsertToken_IntoEmpty() {
+        byte[] empty = new byte[0];
+        byte[] mutated = MutationOps.insertToken(empty, token);
+
+        Assertions.assertArrayEquals(token, mutated, "插入空数组应等于 Token 本身");
+    }
+
+    @Test
+    void testTokenSanity() {
+        // 验证大量随机调用不会抛出 IndexOutOfBoundsException
+        for (int i = 0; i < 100; i++) {
+            MutationOps.overwriteToken(data, token);
+            MutationOps.insertToken(data, token);
         }
     }
 }
