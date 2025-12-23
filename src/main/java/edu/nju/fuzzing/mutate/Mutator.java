@@ -2,14 +2,11 @@ package edu.nju.fuzzing.mutate;
 
 import edu.nju.fuzzing.model.Seed;
 import edu.nju.fuzzing.model.Testcase;
-import java.util.List;
+import java.util.Iterator;
 
 public interface Mutator {
     /**
-     * 根据能量预算对种子进行变异
-     * @param seed 原始种子
-     * @param energy 预算生成的测试用例数量
-     * @return 变异后的测试用例列表
+     * 返回一个变异迭代器，支持惰性生成测试用例
      */
-    List<Testcase> mutate(Seed seed, int energy);
+    Iterator<Testcase> mutate(Seed seed, int energy);
 }

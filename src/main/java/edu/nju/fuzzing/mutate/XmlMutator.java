@@ -1,5 +1,4 @@
-package edu.nju.fuzzing.mutate.grammars;
-import edu.nju.fuzzing.mutate.AbstractGrammarMutator;
+package edu.nju.fuzzing.mutate;
 import java.util.Arrays;
 
 public class XmlMutator extends AbstractGrammarMutator {
@@ -9,4 +8,5 @@ public class XmlMutator extends AbstractGrammarMutator {
         addRule("<elem>", Arrays.asList("<tag prop='val'/>", "<tag>text</tag>"));
         addRule("<tag>", Arrays.asList("foo", "bar", "div"));
     }
+
 }
