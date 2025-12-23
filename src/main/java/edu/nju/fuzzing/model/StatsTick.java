@@ -2,52 +2,32 @@ package edu.nju.fuzzing.model;
 
 /**
  * A snapshot of fuzzer statistics at a point in time.
- * 
- * @param elapsedSec elapsed time in seconds since fuzzing started
- * @param execsTotal total number of executions
- * @param execsPerSec average executions per second
- * @param queueSize current queue size (interesting inputs)
- * @param crashes total number of crashes found
- * @param hangs total number of hangs (timeouts) found
- * @param totalPaths total number of unique paths discovered
- * @param lastNewPathSecAgo seconds since last new path was discovered
+ * Compliant with the "Fuzzing Logging Specification".
  */
 public record StatsTick(
-        long elapsedSec,
-        long execsTotal,
-        double execsPerSec,
-        int queueSize,
-        int crashes,
-        int hangs,
-        int totalPaths,
-        long lastNewPathSecAgo
+        String targetName,      // [新增] 必填：目标名称
+        long elapsedSec,        // [对应 timestamp]
+        long execsTotal,        // [对应 exec_count]
+        int coveredEdges,       // [新增] 必填：已覆盖边数
+        double execsPerSec,     // [对应 execs_per_sec]
+        int queueSize,          // [对应 queue_size]
+        int crashes,            // [对应 crash_count]
+        int hangs,              // [对应 hang_count]
+        long lastNewPathSecAgo  // [辅助] 距离上次发现新路径的秒数
 ) {
     /**
-     * Creates a StatsTick with default values for new fields (backward compatibility).
-     */
-    public StatsTick(
-            long elapsedSec,
-            long execsTotal,
-            double execsPerSec,
-            int queueSize,
-            int crashes,
-            int hangs
-    ) {
-        this(elapsedSec, execsTotal, execsPerSec, queueSize, crashes, hangs, queueSize, 0);
-    }
-
-    /**
-     * Formats as a single-line status string.
+     * Formats as a single-line status string for console output.
      */
     public String toStatusLine() {
         return String.format(
-                "[%s] execs: %d | exec/s: %.1f | paths: %d | crashes: %d | hangs: %d | last_path: %ds ago",
+                "[%s][%s] cov: %d | execs: %d | spd: %.0f/s | queue: %d | crash: %d | last: %ds ago",
+                targetName,
                 formatDuration(elapsedSec),
+                coveredEdges,
                 execsTotal,
                 execsPerSec,
-                totalPaths,
+                queueSize,
                 crashes,
-                hangs,
                 lastNewPathSecAgo
         );
     }
@@ -59,4 +39,3 @@ public record StatsTick(
         return String.format("%02d:%02d:%02d", hours, minutes, secs);
     }
 }
-
