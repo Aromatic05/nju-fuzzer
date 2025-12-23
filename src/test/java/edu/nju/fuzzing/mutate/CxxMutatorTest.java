@@ -1,4 +1,4 @@
 package edu.nju.fuzzing.mutate;
 
-public class MutationOps {
+public class CxxMutatorTest {
 }
