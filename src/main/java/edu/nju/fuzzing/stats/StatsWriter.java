@@ -1,7 +1,6 @@
 package edu.nju.fuzzing.stats;
 
 import edu.nju.fuzzing.model.StatsTick;
-
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -20,21 +19,25 @@ public class StatsWriter implements AutoCloseable {
                 StandardOpenOption.CREATE,
                 StandardOpenOption.APPEND
         );
+        
+        // [严格对齐规范] 写入 CSV Header
         if (!exists) {
-            writer.write("time_sec,execs_total,execs_per_sec,queue_size,crashes,hangs\n");
+            writer.write("timestamp,target_name,exec_count,covered_edges,execs_per_sec,queue_size,crash_count\n");
             writer.flush();
         }
     }
 
     public void tick(StatsTick t) throws IOException {
+        // [严格对齐规范] 写入数据行
         writer.write(String.format(
-                "%d,%d,%.2f,%d,%d,%d%n",
+                "%d,%s,%d,%d,%.2f,%d,%d%n",
                 t.elapsedSec(),
+                t.targetName(),
                 t.execsTotal(),
+                t.coveredEdges(),
                 t.execsPerSec(),
                 t.queueSize(),
-                t.crashes(),
-                t.hangs()
+                t.crashes()
         ));
         writer.flush();
     }
