@@ -1,6 +1,7 @@
 package edu.nju.fuzzing.core;
 
 import edu.nju.fuzzing.cov.CoverageMonitor;
+import edu.nju.fuzzing.cov.CoverageMonitorEx;
 import edu.nju.fuzzing.exec.Executor;
 import edu.nju.fuzzing.model.Coverage;
 import edu.nju.fuzzing.model.CoverageEx;
@@ -98,13 +99,30 @@ public final class InstrumentedExecutorHarness implements ExecutorHarness {
             input.timeout(),
             input.outDir()
         );
-        
+
         // 3. Collect coverage after execution
-        Coverage coverage = coverageMonitor.afterRun(run);
-        
-        // 4. Convert to CoverageEx (upgrade from basic Coverage)
-        CoverageEx coverageEx = CoverageEx.fromBasic(coverage);
-        
+        // Prefer extended monitor if available so we keep edge-level information.
+        final CoverageEx coverageEx;
+        if (coverageMonitor instanceof CoverageMonitorEx ex) {
+            coverageEx = ex.afterRunEx(run);
+        } else {
+            Coverage coverage = coverageMonitor.afterRun(run);
+            // Preserve execTimeNanos; CoverageEx.fromBasic() would drop it.
+            coverageEx = new CoverageEx(
+                    coverage.execId(),
+                    coverage.timestampMillis(),
+                    coverage.mapSize(),
+                    coverage.nonZeroBytes(),
+                    coverage.newBytes(),
+                    coverage.bitmapHash(),
+                    coverage.interesting(),
+                    edu.nju.fuzzing.cov.EdgeSet.empty(),
+                    edu.nju.fuzzing.cov.EdgeSet.empty(),
+                    run.execTimeNanos(),
+                    CoverageEx.Stability.UNKNOWN
+            );
+        }
+
         return new ExecResult(run, coverageEx);
     }
     

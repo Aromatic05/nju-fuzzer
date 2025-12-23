@@ -17,7 +17,6 @@ public class FuzzStats {
     private final AtomicInteger hangs = new AtomicInteger(0);
     
     private volatile Instant lastNewPathAt;
-    private volatile Instant lastExecAt;
     
     // For exec/sec calculation
     private volatile long lastExecsSnapshot = 0;
@@ -31,7 +30,10 @@ public class FuzzStats {
         this.startTime = Instant.now();
         this.lastSnapshotTime = startTime;
         this.lastNewPathAt = startTime;
-        this.lastExecAt = startTime;
+    }
+
+    public FuzzStats() {
+        this("UNKNOWN");
     }
 
     // [新增] 更新覆盖率数据 (由 CoverageDB 提供)
@@ -41,7 +43,6 @@ public class FuzzStats {
 
     public void recordExec() {
         execsTotal.incrementAndGet();
-        lastExecAt = Instant.now();
     }
     
     public void recordNewPath() {
@@ -49,8 +50,24 @@ public class FuzzStats {
         lastNewPathAt = Instant.now();
     }
 
+    public int getTotalPaths() {
+        return totalPaths.get();
+    }
+
     public void recordCrash() { crashes.incrementAndGet(); }
     public void recordHang() { hangs.incrementAndGet(); }
+
+    public long getExecsTotal() {
+        return execsTotal.get();
+    }
+
+    public int getCrashes() {
+        return crashes.get();
+    }
+
+    public int getHangs() {
+        return hangs.get();
+    }
 
     public double getRecentExecsPerSec() {
         Instant now = Instant.now();
@@ -98,6 +115,7 @@ public class FuzzStats {
                 coveredEdges.get(),      // [关键数据]
                 getRecentExecsPerSec(),  // 使用近期速度更准确
                 queueSize,
+                totalPaths.get(),
                 crashes.get(),
                 hangs.get(),
                 lastPathSecAgo
