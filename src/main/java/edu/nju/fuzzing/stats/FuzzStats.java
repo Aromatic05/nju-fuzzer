@@ -69,8 +69,16 @@ public class FuzzStats {
     }
 
     public double getExecsPerSec() {
-        long elapsed = getElapsedSeconds();
-        return elapsed > 0 ? (double) execsTotal.get() / elapsed : 0.0;
+        // 使用 toMillis() 获取毫秒，然后除以 1000.0 转为浮点数的秒
+        long elapsedMillis = Duration.between(startTime, Instant.now()).toMillis();
+        
+        // 避免除以零
+        if (elapsedMillis == 0) {
+            return 0.0;
+        }
+        
+        // 计算公式：(总次数 * 1000) / 毫秒数
+        return (double) execsTotal.get() * 1000.0 / elapsedMillis;
     }
 
     public long getElapsedSeconds() {
