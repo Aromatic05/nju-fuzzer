@@ -16,5 +16,8 @@ public record Testcase(
         return Arrays.copyOf(data, data.length);
     }
 
-    // 如果你很在意性能，且能保证外部不修改，可以直接用 record 自带的 data()
+    public byte[] getData() {
+        return data;
+    }
+
 }
