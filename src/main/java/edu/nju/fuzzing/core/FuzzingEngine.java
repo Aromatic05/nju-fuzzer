@@ -225,6 +225,9 @@ public class FuzzingEngine {
         Path execLogsDir = workdir.resolve("tmp/exec-logs");
         Files.createDirectories(tmpInputsDir);
         Files.createDirectories(execLogsDir);
+
+        // Reused input file to avoid creating millions of temp files.
+        Path currentInputFile = tmpInputsDir.resolve(".cur_input");
         
         // 2. 加载初始种子
         statusPrinter.printEvent("Loading initial seeds from " + initialSeedDir);
@@ -282,7 +285,7 @@ public class FuzzingEngine {
 
                     // E. 执行与监控 (Execution & Monitoring)
                     // harness 内部负责：beforeRun -> executor.run -> afterRun
-                    ExecInput input = buildExecInput(targetSpec, tc, tmpInputsDir, execLogsDir);
+                    ExecInput input = buildExecInput(targetSpec, tc, currentInputFile, execLogsDir);
                     ExecResult result = harness.execute(input);
                     
                     // 记录执行
@@ -400,7 +403,7 @@ public class FuzzingEngine {
     private static ExecInput buildExecInput(
             TargetSpec spec,
             Testcase tc,
-            Path tmpInputsDir,
+            Path currentInputFile,
             Path execLogsDir
     ) throws IOException {
         if (spec == null) throw new IllegalArgumentException("spec is null");
@@ -408,11 +411,18 @@ public class FuzzingEngine {
 
         boolean usesFile = spec.argvTemplate().stream().anyMatch("@@"::equals);
 
-        // Always persist the testcase as an artifact.
-        Path artifactFile = Files.createTempFile(tmpInputsDir, "id_", ".bin");
-        Files.write(artifactFile, tc.getData(), StandardOpenOption.TRUNCATE_EXISTING);
+        // Overwrite a fixed file each time to avoid inode/disk explosion.
+        if (currentInputFile == null) {
+            throw new IllegalArgumentException("currentInputFile is null");
+        }
+        Files.write(
+            currentInputFile,
+            tc.getData(),
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING
+        );
 
-        Path inputFile = usesFile ? artifactFile : null;
+        Path inputFile = usesFile ? currentInputFile : null;
         byte[] stdinData = usesFile ? null : tc.getData();
 
         var cmd = CommandResolver.resolve(spec, inputFile);
