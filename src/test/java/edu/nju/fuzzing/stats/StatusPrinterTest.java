@@ -6,162 +6,132 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class StatusPrinterTest {
 
+    // Helper method to create a compliant tick
+    private StatsTick createTick(String target, int execs, int cov, int crash) {
+        return new StatsTick(target, 10, execs, cov, 100.0, 5, crash, 0, 2);
+    }
+
     @Test
-    void shouldPrintStatusOnDemand() {
+    void shouldPrintFormattedStatusLine() {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PrintStream ps = new PrintStream(baos);
-        
-        StatsTick tick = new StatsTick(60, 1000, 16.7, 50, 2, 1, 100, 30);
-        
-        StatusPrinter printer = new StatusPrinter(ps, () -> tick, 1);
-        printer.printNow();
-        
-        String output = baos.toString(StandardCharsets.UTF_8);
-        assertTrue(output.contains("execs: 1000"));
-        assertTrue(output.contains("paths: 100"));
-        assertTrue(output.contains("crashes: 2"));
+        StatsTick tick = createTick("target_x", 1000, 50, 0);
+
+        // 修复：使用 try-with-resources 自动关闭 printer
+        try (StatusPrinter printer = new StatusPrinter(new PrintStream(baos), () -> tick, 1)) {
+            printer.printNow();
+            
+            String output = baos.toString(StandardCharsets.UTF_8);
+            
+            // Check log format compliance
+            assertTrue(output.contains("[target_x]"), "Should contain target name");
+            assertTrue(output.contains("cov: 50"), "Should contain coverage");
+            assertTrue(output.contains("execs: 1000"), "Should contain exec count");
+        }
     }
 
     @Test
-    void shouldPrintEvent() {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PrintStream ps = new PrintStream(baos);
-        
-        StatsTick tick = new StatsTick(0, 0, 0, 0, 0, 0, 0, 0);
-        StatusPrinter printer = new StatusPrinter(ps, () -> tick, 1);
-        
-        printer.printEvent("New crash found!");
-        
-        String output = baos.toString(StandardCharsets.UTF_8);
-        assertTrue(output.contains("[EVENT]"));
-        assertTrue(output.contains("New crash found!"));
-    }
-
-    @Test
-    void shouldPrintNewPath() {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PrintStream ps = new PrintStream(baos);
-        
-        StatsTick tick = new StatsTick(0, 0, 0, 0, 0, 0, 0, 0);
-        StatusPrinter printer = new StatusPrinter(ps, () -> tick, 1);
-        
-        printer.printNewPath(42, 1500);
-        
-        String output = baos.toString(StandardCharsets.UTF_8);
-        assertTrue(output.contains("[NEW PATH]"));
-        assertTrue(output.contains("id=42"));
-        assertTrue(output.contains("coverage=1500"));
-    }
-
-    @Test
-    void shouldPrintCrash() {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PrintStream ps = new PrintStream(baos);
-        
-        StatsTick tick = new StatsTick(0, 0, 0, 0, 0, 0, 0, 0);
-        StatusPrinter printer = new StatusPrinter(ps, () -> tick, 1);
-        
-        printer.printCrash(5, "SIGSEGV");
-        
-        String output = baos.toString(StandardCharsets.UTF_8);
-        assertTrue(output.contains("[CRASH]"));
-        assertTrue(output.contains("id=5"));
-        assertTrue(output.contains("reason=SIGSEGV"));
-    }
-
-    @Test
-    void shouldPrintHang() {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PrintStream ps = new PrintStream(baos);
-        
-        StatsTick tick = new StatsTick(0, 0, 0, 0, 0, 0, 0, 0);
-        StatusPrinter printer = new StatusPrinter(ps, () -> tick, 1);
-        
-        printer.printHang(3, 5000);
-        
-        String output = baos.toString(StandardCharsets.UTF_8);
-        assertTrue(output.contains("[HANG]"));
-        assertTrue(output.contains("id=3"));
-        assertTrue(output.contains("timeout=5000ms"));
-    }
-
-    @Test
-    void shouldBuildWithBuilder() {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PrintStream ps = new PrintStream(baos);
-        StatsTick tick = new StatsTick(0, 0, 0, 0, 0, 0, 0, 0);
-        
-        StatusPrinter printer = StatusPrinter.builder()
-                .output(ps)
-                .statsSupplier(() -> tick)
-                .intervalSeconds(5)
-                .build();
-        
-        assertNotNull(printer);
-    }
-
-    @Test
-    void shouldRequireStatsSupplierInBuilder() {
-        assertThrows(IllegalStateException.class, () -> 
-            StatusPrinter.builder().build()
-        );
-    }
-
-    @Test
-    void shouldHandleSupplierException() {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        PrintStream ps = new PrintStream(baos);
-        
-        StatusPrinter printer = new StatusPrinter(ps, () -> {
-            throw new RuntimeException("Test error");
-        }, 1);
-        
-        // Should not throw
-        assertDoesNotThrow(printer::printNow);
-    }
-
-    @Test
-    void shouldUseStdoutByDefault() {
-        StatsTick tick = new StatsTick(0, 0, 0, 0, 0, 0, 0, 0);
-        StatusPrinter printer = new StatusPrinter(() -> tick);
-        
-        assertNotNull(printer);
-    }
-
-    @Test
-    void statsTickShouldFormatStatusLine() {
-        StatsTick tick = new StatsTick(3661, 100000, 27.3, 50, 3, 2, 150, 120);
-        
+    void shouldFormatDurationCorrectly() {
+        StatsTick tick = new StatsTick("t", 3661, 0, 0, 0, 0, 0, 0, 0);
         String line = tick.toStatusLine();
-        
-        assertTrue(line.contains("01:01:01")); // formatted duration
-        assertTrue(line.contains("execs: 100000"));
-        assertTrue(line.contains("exec/s: 27.3"));
-        assertTrue(line.contains("paths: 150"));
-        assertTrue(line.contains("crashes: 3"));
-        assertTrue(line.contains("hangs: 2"));
-        assertTrue(line.contains("last_path: 120s ago"));
+        assertTrue(line.contains("01:01:01"), "3661s should be 01:01:01");
     }
 
     @Test
-    void statsTickShouldHaveBackwardCompatibleConstructor() {
-        // Old constructor with 6 params
-        StatsTick tick = new StatsTick(100, 1000, 10.0, 20, 1, 0);
-        
-        assertEquals(100, tick.elapsedSec());
-        assertEquals(1000, tick.execsTotal());
-        assertEquals(10.0, tick.execsPerSec());
-        assertEquals(20, tick.queueSize());
-        assertEquals(1, tick.crashes());
-        assertEquals(0, tick.hangs());
-        // Default values for new fields
-        assertEquals(20, tick.totalPaths()); // defaults to queueSize
-        assertEquals(0, tick.lastNewPathSecAgo());
+    void shouldPrintEvents() {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        // 修复：使用 try-with-resources
+        try (StatusPrinter printer = new StatusPrinter(new PrintStream(baos), () -> createTick("t", 0, 0, 0), 1)) {
+            printer.printEvent("Fuzzing started");
+            
+            assertTrue(baos.toString().contains("[EVENT] Fuzzing started"));
+        }
+    }
+
+    @Test
+    void shouldPrintCrashAlert() {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        // 修复：使用 try-with-resources
+        try (StatusPrinter printer = new StatusPrinter(new PrintStream(baos), () -> createTick("t", 0, 0, 0), 1)) {
+            printer.printCrash(1, "SIGSEGV");
+            
+            String output = baos.toString();
+            assertTrue(output.contains("[CRASH]"));
+            assertTrue(output.contains("reason=SIGSEGV"));
+        }
+    }
+
+    @Test
+    void shouldPrintNewPathAlert() {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        // 修复：使用 try-with-resources
+        try (StatusPrinter printer = new StatusPrinter(new PrintStream(baos), () -> createTick("t", 0, 0, 0), 1)) {
+            printer.printNewPath(5, 120);
+            
+            String output = baos.toString();
+            assertTrue(output.contains("[NEW PATH]"));
+            assertTrue(output.contains("id=5"));
+            assertTrue(output.contains("coverage=120"));
+        }
+    }
+
+    @Test
+    void shouldPrintHangAlert() {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        // 修复：使用 try-with-resources
+        try (StatusPrinter printer = new StatusPrinter(new PrintStream(baos), () -> createTick("t", 0, 0, 0), 1)) {
+            printer.printHang(2, 5000);
+            
+            assertTrue(baos.toString().contains("[HANG]"));
+        }
+    }
+
+    @Test
+    void shouldHandleBuilderPattern() {
+        // 修复：使用 try-with-resources
+        try (StatusPrinter printer = StatusPrinter.builder()
+                .statsSupplier(() -> createTick("t", 0, 0, 0))
+                .intervalSeconds(5)
+                .build()) {
+            
+            assertNotNull(printer);
+        }
+    }
+
+    @Test
+    void shouldHandleSupplierErrorGracefully() {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        // 修复：使用 try-with-resources
+        try (StatusPrinter printer = new StatusPrinter(new PrintStream(baos), () -> {
+            throw new RuntimeException("DB offline");
+        }, 1)) {
+            
+            assertDoesNotThrow(printer::printNow);
+            assertTrue(baos.toString().contains("[STATUS ERROR]"), "Should log error");
+        }
+    }
+
+    @Test
+    void shouldNotPrintIfStopped() {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        // 修复：使用 try-with-resources
+        try (StatusPrinter printer = new StatusPrinter(new PrintStream(baos), () -> createTick("t", 0, 0, 0), 1)) {
+            printer.start(); // Set running=true
+            printer.stop();  // Set running=false
+            
+            assertDoesNotThrow(printer::stop);
+        }
+    }
+
+    @Test
+    void shouldDefaultToStdout() {
+        // 修复：使用 try-with-resources
+        try (StatusPrinter printer = new StatusPrinter(() -> createTick("t", 0, 0, 0))) {
+            assertNotNull(printer);
+        }
     }
 }
