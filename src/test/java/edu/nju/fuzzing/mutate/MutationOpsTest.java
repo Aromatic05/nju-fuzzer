@@ -164,4 +164,46 @@ class MutationOpsTest {
             MutationOps.insertToken(data, token);
         }
     }
+    @Test
+    void testCloneBlock_ShouldDuplicateContent() {
+        byte[] data = "ABCDE".getBytes();
+        // 克隆块后，长度必然增加
+        byte[] mutated = MutationOps.cloneBlock(data);
+        Assertions.assertTrue(mutated.length > data.length);
+
+        // 验证确实是原来的字符 (统计字符总量)
+        // 比如原来 1个A，变异后应该变成 2个A (如果克隆了A)
+        // 简单验证：变异后的所有字节都必须来自原数组
+        for (byte b : mutated) {
+            boolean exists = false;
+            for (byte origin : data) if (b == origin) exists = true;
+            Assertions.assertTrue(exists, "克隆的数据必须来自原数组");
+        }
+    }
+
+    @Test
+    void testSwapBytes_ShouldChangeOrder() {
+        byte[] data = {1, 2, 3, 4, 5};
+        byte[] mutated = MutationOps.swapBytes(data);
+
+        Assertions.assertEquals(data.length, mutated.length);
+        Assertions.assertFalse(Arrays.equals(data, mutated), "交换后内容应不同 (除非随机到了同一个索引)");
+
+        // 验证集合没变 (还是那几个数，只是位置变了)
+        Arrays.sort(data);
+        Arrays.sort(mutated);
+        Assertions.assertArrayEquals(data, mutated);
+    }
+
+    @Test
+    void testArithMultiByte() {
+        // 测试 arithShort 和 arithInt 不会报错，且确实修改了数据
+        byte[] data = new byte[10];
+
+        byte[] m1 = MutationOps.arithShort(data);
+        Assertions.assertFalse(Arrays.equals(data, m1));
+
+        byte[] m2 = MutationOps.arithInt(data);
+        Assertions.assertFalse(Arrays.equals(data, m2));
+    }
 }
