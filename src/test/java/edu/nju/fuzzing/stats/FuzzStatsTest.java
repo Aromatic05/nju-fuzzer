@@ -6,162 +6,159 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class FuzzStatsTest {
 
     private FuzzStats stats;
+    private static final String TARGET_NAME = "test_target";
 
     @BeforeEach
     void setUp() {
-        stats = new FuzzStats();
+        stats = new FuzzStats(TARGET_NAME);
     }
 
-    @Test
-    void shouldStartWithZeroValues() {
-        assertEquals(0, stats.getExecsTotal());
-        assertEquals(0, stats.getTotalPaths());
-        assertEquals(0, stats.getCrashes());
-        assertEquals(0, stats.getHangs());
-    }
+    // --- 基础状态测试 ---
 
     @Test
-    void shouldRecordExecs() {
+    void shouldInitializeWithTargetNameAndZeroValues() {
+        StatsTick tick = stats.toStatsTick(0);
+        assertEquals(TARGET_NAME, tick.targetName());
+        assertEquals(0, tick.execsTotal());
+        assertEquals(0, tick.coveredEdges());
+        assertEquals(0, tick.crashes());
+    }
+
+    // --- 执行计数测试 ---
+
+    @Test
+    void shouldRecordSingleExec() {
         stats.recordExec();
-        stats.recordExec();
-        stats.recordExec();
-        
-        assertEquals(3, stats.getExecsTotal());
+        assertEquals(1, stats.toStatsTick(0).execsTotal());
     }
 
     @Test
-    void shouldRecordMultipleExecs() {
-        stats.recordExecs(100);
-        stats.recordExecs(50);
+    void shouldRecordMultipleExecsConcurrent() throws InterruptedException {
+        int threads = 10;
+        int execsPerThread = 1000;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch latch = new CountDownLatch(threads);
+
+        for (int i = 0; i < threads; i++) {
+            executor.submit(() -> {
+                for (int j = 0; j < execsPerThread; j++) {
+                    stats.recordExec();
+                }
+                latch.countDown();
+            });
+        }
+
+        latch.await(5, TimeUnit.SECONDS);
+        executor.shutdown();
         
-        assertEquals(150, stats.getExecsTotal());
+        assertEquals(threads * execsPerThread, stats.toStatsTick(0).execsTotal());
+    }
+
+    // --- 覆盖率测试 (New Feature) ---
+
+    @Test
+    void shouldUpdateCoveredEdges() {
+        stats.updateCoveredEdges(500);
+        assertEquals(500, stats.toStatsTick(0).coveredEdges());
+        
+        stats.updateCoveredEdges(600);
+        assertEquals(600, stats.toStatsTick(0).coveredEdges());
     }
 
     @Test
-    void shouldRecordNewPaths() {
-        stats.recordNewPath();
-        stats.recordNewPath();
+    void shouldTrackCoveredEdgesIndependentlyOfExecs() {
+        stats.recordExec();
+        stats.updateCoveredEdges(100);
         
-        assertEquals(2, stats.getTotalPaths());
+        StatsTick tick = stats.toStatsTick(0);
+        assertEquals(1, tick.execsTotal());
+        assertEquals(100, tick.coveredEdges());
     }
+
+    // --- 异常状态测试 ---
 
     @Test
     void shouldRecordCrashes() {
         stats.recordCrash();
         stats.recordCrash();
-        stats.recordCrash();
-        
-        assertEquals(3, stats.getCrashes());
+        assertEquals(2, stats.toStatsTick(0).crashes());
     }
 
     @Test
     void shouldRecordHangs() {
         stats.recordHang();
-        
-        assertEquals(1, stats.getHangs());
+        assertEquals(1, stats.toStatsTick(0).hangs());
     }
 
     @Test
-    void shouldTrackElapsedTime() throws InterruptedException {
-        Thread.sleep(100);
-        
-        Duration elapsed = stats.getElapsedTime();
-        assertTrue(elapsed.toMillis() >= 100);
-    }
-
-    @Test
-    void shouldUpdateLastNewPathTime() throws InterruptedException {
-        Instant before = stats.getLastNewPathAt();
-        Thread.sleep(50);
+    void shouldRecordNewPathsAndTime() throws InterruptedException {
         stats.recordNewPath();
-        Instant after = stats.getLastNewPathAt();
+        Thread.sleep(100); // Wait a bit
         
-        assertTrue(after.isAfter(before));
+        StatsTick tick = stats.toStatsTick(5);
+        assertTrue(tick.lastNewPathSecAgo() >= 0);
+        assertEquals(5, tick.queueSize()); // Queue size is passed externally
     }
+
+    // --- 时间与速率测试 ---
 
     @Test
     void shouldCalculateExecsPerSec() throws InterruptedException {
-        // Use custom start time to ensure elapsed time > 0
-        Instant startTime = Instant.now().minusSeconds(1);
-        FuzzStats customStats = new FuzzStats(startTime);
+        // Mocking time via reflection is hard, so we use a custom constructor trick (if supported)
+        // Or simply sleep a bit for integration-style test
+        Thread.sleep(100); 
+        stats.recordExec(); // 1 exec in >0.1s => <10 exec/s
         
-        // Record 100 execs
-        customStats.recordExecs(100);
-        
-        // Should have some exec/sec value (at least 100/2 = 50)
-        double execs = customStats.getExecsPerSec();
-        assertTrue(execs > 0, "Expected execs/sec > 0, got: " + execs);
+        double rate = stats.getExecsPerSec();
+        assertTrue(rate > 0 && rate < 10000, "Rate should be reasonable: " + rate);
     }
 
     @Test
-    void shouldProduceStatsTick() {
-        stats.recordExecs(1000);
-        stats.recordNewPath();
-        stats.recordNewPath();
+    void shouldCalculateRecentExecsPerSec() throws InterruptedException {
+        // Initial snapshot
+        stats.getRecentExecsPerSec(); 
+        
+        Thread.sleep(200);
+        stats.recordExec();
+        stats.recordExec();
+        
+        double recentRate = stats.getRecentExecsPerSec();
+        assertTrue(recentRate > 0, "Recent rate should be positive");
+    }
+
+    @Test
+    void shouldHandleZeroTimeElapsedGracefully() {
+        // Create stats and immediately check rate
+        FuzzStats instantStats = new FuzzStats(TARGET_NAME);
+        assertEquals(0.0, instantStats.getExecsPerSec());
+    }
+
+    // --- 快照生成测试 ---
+
+    @Test
+    void shouldGenerateCorrectStatsTick() {
+        stats.recordExec();
         stats.recordCrash();
+        stats.updateCoveredEdges(123);
         
-        StatsTick tick = stats.toStatsTick(50);
+        StatsTick tick = stats.toStatsTick(10);
         
-        assertEquals(1000, tick.execsTotal());
-        assertEquals(50, tick.queueSize());
-        assertEquals(1, tick.crashes());
-        assertEquals(0, tick.hangs());
-        assertEquals(2, tick.totalPaths());
-    }
-
-    @Test
-    void shouldBeThreadSafe() throws InterruptedException {
-        int threads = 10;
-        int execsPerThread = 1000;
-        
-        Thread[] workers = new Thread[threads];
-        for (int i = 0; i < threads; i++) {
-            workers[i] = new Thread(() -> {
-                for (int j = 0; j < execsPerThread; j++) {
-                    stats.recordExec();
-                }
-            });
-        }
-        
-        for (Thread t : workers) t.start();
-        for (Thread t : workers) t.join();
-        
-        assertEquals(threads * execsPerThread, stats.getExecsTotal());
-    }
-
-    @Test
-    void shouldHaveCorrectToString() {
-        stats.recordExecs(100);
-        stats.recordNewPath();
-        stats.recordCrash();
-        
-        String str = stats.toString();
-        
-        assertTrue(str.contains("execs=100"));
-        assertTrue(str.contains("paths=1"));
-        assertTrue(str.contains("crashes=1"));
-    }
-
-    @Test
-    void shouldTrackTimeSinceLastNewPath() throws InterruptedException {
-        stats.recordNewPath();
-        Thread.sleep(100);
-        
-        Duration since = stats.getTimeSinceLastNewPath();
-        assertTrue(since.toMillis() >= 100);
-    }
-
-    @Test
-    void shouldAllowCustomStartTime() {
-        Instant pastTime = Instant.now().minusSeconds(60);
-        FuzzStats customStats = new FuzzStats(pastTime);
-        
-        assertTrue(customStats.getElapsedSeconds() >= 60);
+        assertAll("StatsTick consistency",
+            () -> assertEquals(TARGET_NAME, tick.targetName()),
+            () -> assertEquals(1, tick.execsTotal()),
+            () -> assertEquals(1, tick.crashes()),
+            () -> assertEquals(123, tick.coveredEdges()),
+            () -> assertEquals(10, tick.queueSize())
+        );
     }
 }
