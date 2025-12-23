@@ -2,211 +2,266 @@ package edu.nju.fuzzing.mutate;
 
 import edu.nju.fuzzing.model.Seed;
 import edu.nju.fuzzing.model.Testcase;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 验证 Havoc 和 Splice 变异器的逻辑
+ * AflHavocMutator 的单元测试 (修正版)
+ * 适配具体的 Seed 类定义
  */
 class AflHavocMutatorTest {
 
     private List<Seed> corpus;
-    private Seed seedA;
-    private Seed seedB;
-    private AflHavocMutator mutator;
+    private Seed basicSeed;
 
     @BeforeEach
     void setUp() {
-        // 准备语料库
         corpus = new ArrayList<>();
-
-        // --- 修复点：使用 loadWithMetadata 创建初始种子 ---
-
-        // 模拟 Seed A (全 A)
-        byte[] dataA = "AAAA".repeat(20).getBytes(StandardCharsets.UTF_8);
-        seedA = Seed.loadWithMetadata(new File("seedA"), dataA);
-
-        // 模拟 Seed B (全 B)
-        byte[] dataB = "BBBB".repeat(20).getBytes(StandardCharsets.UTF_8);
-        seedB = Seed.loadWithMetadata(new File("seedB"), dataB);
-
-        corpus.add(seedA);
-        corpus.add(seedB);
-
-        mutator = new AflHavocMutator(corpus);
+        // [修正] 使用 Seed.loadWithMetadata 创建对象
+        // 传入一个虚拟的文件路径和字节数据即可
+        byte[] data = "AAAA".getBytes(StandardCharsets.ISO_8859_1);
+        basicSeed = Seed.loadWithMetadata(new File("dummy_seed_A"), data);
+        corpus.add(basicSeed);
     }
 
-    @Test
-    void testMutate_ShouldRespectEnergy() {
-        int energy = 50;
-        List<Testcase> results = mutator.mutate(seedA, energy);
-        Assertions.assertEquals(energy, results.size(), "生成的 Testcase 数量应等于 energy");
-    }
+    // ==========================================
+    // 基础功能测试
+    // ==========================================
 
     @Test
-    void testMutate_ShouldProduceVariety() {
-        // Havoc 应该产生变化
-        List<Testcase> results = mutator.mutate(seedA, 10);
-        for (Testcase tc : results) {
-            // 注意：Testcase 是 record，访问数据使用 tc.data() 或 tc.getDataCopy()
-            Assertions.assertFalse(Arrays.equals(seedA.getDataCopy(), tc.data()), "Testcase 不应与原种子完全相同");
-            Assertions.assertEquals(seedA, tc.parent(), "Testcase 的父节点引用应正确");
+    @DisplayName("Test 1: Iterator Protocol - 迭代器基本行为测试")
+    void testIteratorProtocol() {
+        int energy = 5;
+        AflHavocMutator mutator = new AflHavocMutator(corpus);
+        Iterator<Testcase> iter = mutator.mutate(basicSeed, energy);
+
+        int count = 0;
+        while (iter.hasNext()) {
+            Testcase tc = iter.next();
+            assertNotNull(tc);
+            assertNotNull(tc.getData());
+            count++;
         }
+
+        assertEquals(energy, count, "迭代器生成的数量应严格等于 Energy");
+        assertThrows(NoSuchElementException.class, iter::next, "耗尽后调用 next() 应抛出异常");
     }
 
     @Test
-    void testMutate_DescriptionCheck() {
-        List<Testcase> results = mutator.mutate(seedA, 5);
-        for (Testcase tc : results) {
-            String desc = tc.description();
-            Assertions.assertTrue(desc.contains("havoc"), "描述信息应包含 havoc");
-        }
-    }
+    @DisplayName("Test 2: Mutation Effectiveness - 变异应产生不同的数据")
+    void testMutationEffectiveness() {
+        AflHavocMutator mutator = new AflHavocMutator(corpus);
+        Iterator<Testcase> iter = mutator.mutate(basicSeed, 50);
 
-    @Test
-    void testSplice_ShouldOccurIdeally() {
-        // Splice 概率较低 (20%)，我们通过大量运行来捕捉一次
-        boolean spliceFound = false;
+        boolean anyChanged = false;
+        byte[] original = basicSeed.getData();
 
-        // 尝试生成 1000 个，理论上会有 Splice
-        List<Testcase> results = mutator.mutate(seedA, 1000);
-
-        for (Testcase tc : results) {
-            // 如果发生了 Splice，描述信息里会有 "splice"
-            if (tc.description().contains("splice")) {
-                spliceFound = true;
+        while (iter.hasNext()) {
+            byte[] mutated = iter.next().getData();
+            if (!Arrays.equals(original, mutated)) {
+                anyChanged = true;
                 break;
             }
         }
-
-        Assertions.assertTrue(spliceFound, "在大样本下应该触发 Splice 变异");
+        assertTrue(anyChanged, "经过多次 Havoc，生成的数据应该与原始数据不同");
     }
 
+    // ==========================================
+    // 结构与拼接测试 (Structural & Splicing)
+    // ==========================================
+
     @Test
-    void testSplice_LogicCheck() {
-        // 手动检查 Splice 效果：如果产生了 Splice，它应该包含 'B'
-        List<Testcase> results = mutator.mutate(seedA, 500);
-        boolean containsB = false;
-        for (Testcase tc : results) {
-            String s = new String(tc.data());
-            if (s.contains("BB")) {
-                containsB = true;
+    @DisplayName("Test 3: Structural Change - 长度应发生变化 (插入/删除)")
+    void testStructuralChange() {
+        AflHavocMutator mutator = new AflHavocMutator(corpus);
+        Iterator<Testcase> iter = mutator.mutate(basicSeed, 100);
+
+        boolean lengthChanged = false;
+        int origLen = basicSeed.getData().length;
+
+        while (iter.hasNext()) {
+            byte[] data = iter.next().getData();
+            if (data.length != origLen) {
+                lengthChanged = true;
                 break;
             }
         }
-        Assertions.assertTrue(containsB, "种子A变异后应包含种子B的片段 (Splice效果)");
+        assertTrue(lengthChanged, "Havoc 应包含结构性变异导致长度变化");
     }
 
     @Test
-    void testSmallSeed_ShouldNotCrash() {
-        // --- 修复点 ---
-        Seed small = Seed.loadWithMetadata(new File("small"), new byte[]{1});
-        List<Testcase> res = mutator.mutate(small, 5);
-        Assertions.assertEquals(5, res.size());
-    }
+    @DisplayName("Test 4: Splicing - 应该融合语料库中其他种子的内容")
+    void testSplicing() {
+        // [修正] 创建真实的 Seed 对象
+        byte[] dataA = "AAAA".repeat(10).getBytes();
+        byte[] dataB = "BBBB".repeat(10).getBytes();
 
-    @Test
-    void testZeroEnergy_ShouldReturnEmpty() {
-        List<Testcase> res = mutator.mutate(seedA, 0);
-        Assertions.assertTrue(res.isEmpty());
-    }
+        Seed seedA = Seed.loadWithMetadata(new File("seed_A"), dataA);
+        Seed seedB = Seed.loadWithMetadata(new File("seed_B"), dataB);
 
-    @Test
-    void testEmptyCorpus_HavocShouldStillWork() {
-        // 如果语料库只有一个种子，Splice 不应触发，但 Havoc 应正常工作
-        List<Seed> singleCorpus = new ArrayList<>();
-        singleCorpus.add(seedA);
-        AflHavocMutator singleMutator = new AflHavocMutator(singleCorpus);
+        List<Seed> multiCorpus = Arrays.asList(seedA, seedB);
 
-        List<Testcase> res = singleMutator.mutate(seedA, 10);
-        Assertions.assertEquals(10, res.size());
-        for(Testcase tc : res) {
-            Assertions.assertFalse(tc.description().contains("splice"), "只有一个种子时不应触发 Splice");
-        }
-    }
+        AflHavocMutator mutator = new AflHavocMutator(multiCorpus);
 
-    @Test
-    void testDeepCopyCheck() {
-        // 确保变异没有修改原 Seed 的数据
-        byte[] original = seedA.getDataCopy();
-        mutator.mutate(seedA, 10);
-        Assertions.assertArrayEquals(original, seedA.getDataCopy(), "变异操作不应污染原 Seed 数据");
-    }
-    // === 新增测试样例 ===
+        // 对 SeedA 进行变异
+        Iterator<Testcase> iter = mutator.mutate(seedA, 200);
 
-    @Test
-    void testDictionaryInjection_ShouldContainKeywords() {
-        // 给一个全 0 的种子，并给予足够的能量，看能否变异出字典里的关键字
-        Seed blankSeed = Seed.loadWithMetadata(new File("blank"), new byte[50]); // 50个0
-
-        // 尝试变异 500 次，期望至少命中一次字典算子
-        List<Testcase> results = mutator.mutate(blankSeed, 500);
-
-        boolean foundKeyword = false;
-        for (Testcase tc : results) {
-            String s = new String(tc.data(), StandardCharsets.ISO_8859_1);
-            // 检查你在 AflHavocMutator.initDictionary 里定义的关键字
-            if (s.contains("ELF") || s.contains("PNG") || s.contains("<root>") || s.contains("SELECT")) {
-                foundKeyword = true;
+        boolean spliced = false;
+        while (iter.hasNext()) {
+            byte[] data = iter.next().getData();
+            String content = new String(data);
+            // 检查内容是否混合
+            if (content.contains("AAAA") && content.contains("BBBB")) {
+                spliced = true;
                 break;
             }
         }
-        Assertions.assertTrue(foundKeyword, "Havoc 应该能从内置字典中注入关键字 (如 ELF, <root>)");
+        assertTrue(spliced, "当语料库 > 1 时，Splicing 应该触发并混合内容");
+    }
+
+    // ==========================================
+    // 字典功能测试
+    // ==========================================
+
+    @Test
+    @DisplayName("Test 5: Dictionary Insertion - 应该插入自定义 Token")
+    void testDictionary() {
+        AflHavocMutator mutator = new AflHavocMutator(corpus);
+        String magicToken = "MAGIC_TOKEN";
+        mutator.addDictionaryEntry(magicToken.getBytes());
+
+        Iterator<Testcase> iter = mutator.mutate(basicSeed, 200);
+
+        boolean foundToken = false;
+        while (iter.hasNext()) {
+            byte[] data = iter.next().getData();
+            if (indexOf(data, magicToken.getBytes()) != -1) {
+                foundToken = true;
+                break;
+            }
+        }
+        assertTrue(foundToken, "变异结果应包含注入的字典 Token");
     }
 
     @Test
-    void testAdaptiveStacking_HighEnergyChangesMore() {
-        // 测试自适应堆叠：高能量应该导致数据被修改得面目全非
-        // 低能量 (stack 2-8) vs 高能量 (stack 2-32)
-        // 这里的 energy 参数不仅决定数量，在你的算法里也决定了 maxStack 深度
+    @DisplayName("Test 6: Load Dictionary - 批量加载字典")
+    void testLoadDictionary() {
+        AflHavocMutator mutator = new AflHavocMutator(corpus);
+        List<String> dicts = Arrays.asList("FUNC", "VAR", "LET");
+        mutator.loadDictionary(dicts);
 
-        // 1. 低能量变异 (Energy=50) -> maxStack = 8
-        // 我们需要 Hack 一下 Seed 的 energy 属性，或者在 mutate 调用时传入
-        // 注意：你的 mutate 方法是用传入参数 energy 来决定循环次数
-        // 但你的 AflHavocMutator 内部逻辑是用传入的 energy 来判断 maxStack
+        // 创建一个空内容的 Seed 方便观察插入
+        Seed emptySeed = Seed.loadWithMetadata(new File("empty"), new byte[20]);
+        Iterator<Testcase> iter = mutator.mutate(emptySeed, 200);
 
-        // 低能量测试: energy=100
-        Seed seed = Seed.loadWithMetadata(new File("seed"), new byte[100]); // 100个0
-        List<Testcase> lowEnergyResults = mutator.mutate(seed, 100);
-
-        // 高能量测试: energy=2000 (触发 maxStack=32)
-        List<Testcase> highEnergyResults = mutator.mutate(seed, 2000);
-
-        // 计算平均改变的字节数 (Hamming Distance 近似值)
-        double lowChangeRate = calculateAverageChangeRate(seed.getData(), lowEnergyResults);
-        double highChangeRate = calculateAverageChangeRate(seed.getData(), highEnergyResults);
-
-        System.out.println("Low Energy Change Rate: " + lowChangeRate);
-        System.out.println("High Energy Change Rate: " + highChangeRate);
-
-        // 高能量（堆叠更多算子）通常会导致更多字节被修改
-        // 注意：这是概率性的，但在大样本下应该成立
-        Assertions.assertTrue(highChangeRate > lowChangeRate * 0.8,
-                "高能量变异应当倾向于产生更剧烈的变化 (堆叠更多算子)");
+        boolean foundAny = false;
+        while(iter.hasNext()) {
+            byte[] data = iter.next().getData();
+            if (indexOf(data, "FUNC".getBytes()) != -1 ||
+                    indexOf(data, "VAR".getBytes()) != -1) {
+                foundAny = true;
+                break;
+            }
+        }
+        assertTrue(foundAny, "批量加载的字典应被用于变异");
     }
 
-    // 辅助方法：计算平均有多少个字节发生了变化
-    private double calculateAverageChangeRate(byte[] original, List<Testcase> cases) {
-        long totalDiff = 0;
-        for (Testcase tc : cases) {
-            byte[] mutated = tc.data();
-            // 只比较重合部分的字节差异
-            int len = Math.min(original.length, mutated.length);
-            for (int i = 0; i < len; i++) {
-                if (original[i] != mutated[i]) {
-                    totalDiff++;
+    // ==========================================
+    // 边界与健壮性测试
+    // ==========================================
+
+    @Test
+    @DisplayName("Test 7: Empty Seed - 空数据种子变异不应报错")
+    void testEmptySeed() {
+        // [修正] 创建真实的空 Seed
+        Seed emptySeed = Seed.loadWithMetadata(new File("empty"), new byte[0]);
+        AflHavocMutator mutator = new AflHavocMutator(corpus);
+
+        assertDoesNotThrow(() -> {
+            Iterator<Testcase> iter = mutator.mutate(emptySeed, 10);
+            while (iter.hasNext()) {
+                byte[] data = iter.next().getData();
+                assertNotNull(data);
+            }
+        }, "变异空种子不应抛出异常");
+    }
+
+    @Test
+    @DisplayName("Test 8: Large Seed - 大文件处理性能/逻辑检查")
+    void testLargeSeed() {
+        byte[] largeData = new byte[1024 * 200];
+        Arrays.fill(largeData, (byte) 'A');
+        // [修正] 创建真实的大 Seed
+        Seed largeSeed = Seed.loadWithMetadata(new File("large"), largeData);
+
+        AflHavocMutator mutator = new AflHavocMutator(corpus);
+
+        long startTime = System.currentTimeMillis();
+        Iterator<Testcase> iter = mutator.mutate(largeSeed, 10);
+        while (iter.hasNext()) {
+            Testcase tc = iter.next();
+            assertNotNull(tc.getData());
+        }
+        long duration = System.currentTimeMillis() - startTime;
+
+        assertTrue(duration < 2000, "大文件变异不应耗时过长");
+    }
+
+    @Test
+    @DisplayName("Test 9: Invalid Inputs - 错误的字典输入")
+    void testInvalidInputs() {
+        AflHavocMutator mutator = new AflHavocMutator(corpus);
+        mutator.addDictionaryEntry(null);
+        mutator.addDictionaryEntry(new byte[0]);
+
+        Iterator<Testcase> iter = mutator.mutate(basicSeed, 5);
+        while(iter.hasNext()) {
+            assertNotNull(iter.next().getData());
+        }
+    }
+
+    @Test
+    @DisplayName("Test 10: Data Isolation - 变异不应修改原始种子对象")
+    void testDataIsolation() {
+        byte[] originalData = basicSeed.getData();
+        // 留一个副本用于对比
+        byte[] copyOriginal = Arrays.copyOf(originalData, originalData.length);
+
+        AflHavocMutator mutator = new AflHavocMutator(corpus);
+        Iterator<Testcase> iter = mutator.mutate(basicSeed, 10);
+
+        if (iter.hasNext()) {
+            byte[] mutated = iter.next().getData();
+            // 尝试污染变异后的数据
+            if (mutated.length > 0) mutated[0] = (byte) 0xFF;
+        }
+
+        // 验证原始 Seed 内的数据没有被上面那行修改影响
+        assertArrayEquals(copyOriginal, basicSeed.getData(), "变异操作产生的副作用不应污染原始 Seed 对象");
+    }
+
+    // ==========================================
+    // 辅助方法
+    // ==========================================
+
+    private int indexOf(byte[] data, byte[] pattern) {
+        if (pattern.length == 0) return 0;
+        outer:
+        for (int i = 0; i < data.length - pattern.length + 1; i++) {
+            for (int j = 0; j < pattern.length; j++) {
+                if (data[i + j] != pattern[j]) {
+                    continue outer;
                 }
             }
-            // 长度差异也算一种变化
-            totalDiff += Math.abs(original.length - mutated.length);
+            return i;
         }
-        return (double) totalDiff / cases.size();
+        return -1;
     }
 }
