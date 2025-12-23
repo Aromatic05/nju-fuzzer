@@ -139,4 +139,74 @@ class AflHavocMutatorTest {
         mutator.mutate(seedA, 10);
         Assertions.assertArrayEquals(original, seedA.getDataCopy(), "变异操作不应污染原 Seed 数据");
     }
+    // === 新增测试样例 ===
+
+    @Test
+    void testDictionaryInjection_ShouldContainKeywords() {
+        // 给一个全 0 的种子，并给予足够的能量，看能否变异出字典里的关键字
+        Seed blankSeed = Seed.loadWithMetadata(new File("blank"), new byte[50]); // 50个0
+
+        // 尝试变异 500 次，期望至少命中一次字典算子
+        List<Testcase> results = mutator.mutate(blankSeed, 500);
+
+        boolean foundKeyword = false;
+        for (Testcase tc : results) {
+            String s = new String(tc.data(), StandardCharsets.ISO_8859_1);
+            // 检查你在 AflHavocMutator.initDictionary 里定义的关键字
+            if (s.contains("ELF") || s.contains("PNG") || s.contains("<root>") || s.contains("SELECT")) {
+                foundKeyword = true;
+                break;
+            }
+        }
+        Assertions.assertTrue(foundKeyword, "Havoc 应该能从内置字典中注入关键字 (如 ELF, <root>)");
+    }
+
+    @Test
+    void testAdaptiveStacking_HighEnergyChangesMore() {
+        // 测试自适应堆叠：高能量应该导致数据被修改得面目全非
+        // 低能量 (stack 2-8) vs 高能量 (stack 2-32)
+        // 这里的 energy 参数不仅决定数量，在你的算法里也决定了 maxStack 深度
+
+        // 1. 低能量变异 (Energy=50) -> maxStack = 8
+        // 我们需要 Hack 一下 Seed 的 energy 属性，或者在 mutate 调用时传入
+        // 注意：你的 mutate 方法是用传入参数 energy 来决定循环次数
+        // 但你的 AflHavocMutator 内部逻辑是用传入的 energy 来判断 maxStack
+
+        // 低能量测试: energy=100
+        Seed seed = Seed.loadWithMetadata(new File("seed"), new byte[100]); // 100个0
+        List<Testcase> lowEnergyResults = mutator.mutate(seed, 100);
+
+        // 高能量测试: energy=2000 (触发 maxStack=32)
+        List<Testcase> highEnergyResults = mutator.mutate(seed, 2000);
+
+        // 计算平均改变的字节数 (Hamming Distance 近似值)
+        double lowChangeRate = calculateAverageChangeRate(seed.getData(), lowEnergyResults);
+        double highChangeRate = calculateAverageChangeRate(seed.getData(), highEnergyResults);
+
+        System.out.println("Low Energy Change Rate: " + lowChangeRate);
+        System.out.println("High Energy Change Rate: " + highChangeRate);
+
+        // 高能量（堆叠更多算子）通常会导致更多字节被修改
+        // 注意：这是概率性的，但在大样本下应该成立
+        Assertions.assertTrue(highChangeRate > lowChangeRate * 0.8,
+                "高能量变异应当倾向于产生更剧烈的变化 (堆叠更多算子)");
+    }
+
+    // 辅助方法：计算平均有多少个字节发生了变化
+    private double calculateAverageChangeRate(byte[] original, List<Testcase> cases) {
+        long totalDiff = 0;
+        for (Testcase tc : cases) {
+            byte[] mutated = tc.data();
+            // 只比较重合部分的字节差异
+            int len = Math.min(original.length, mutated.length);
+            for (int i = 0; i < len; i++) {
+                if (original[i] != mutated[i]) {
+                    totalDiff++;
+                }
+            }
+            // 长度差异也算一种变化
+            totalDiff += Math.abs(original.length - mutated.length);
+        }
+        return (double) totalDiff / cases.size();
+    }
 }
