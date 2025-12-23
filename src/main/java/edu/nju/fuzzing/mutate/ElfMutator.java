@@ -1,5 +1,4 @@
-package edu.nju.fuzzing.mutate.grammars;
-import edu.nju.fuzzing.mutate.AbstractGrammarMutator;
+package edu.nju.fuzzing.mutate;
 import java.util.Arrays;
 
 public class ElfMutator extends AbstractGrammarMutator {
