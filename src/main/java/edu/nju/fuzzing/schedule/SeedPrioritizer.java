@@ -20,6 +20,30 @@ public class SeedPrioritizer {
         // Prefer seeds that likely cover more (once metadata exists).
         score += Math.max(0, seed.getBitmapSize());
 
+        // CoverageDB hints: favored/rarity/redundancy.
+        if (seed.isFavored()) {
+            score += 10_000.0;
+        }
+        if (seed.isRedundant()) {
+            score -= 2_000.0;
+        }
+
+        // Prefer seeds that cover rare edges.
+        // rarityScore is already a sum of 1/freq, so a larger value is better.
+        double rarityScore = seed.getRarityScore();
+        if (rarityScore > 0) {
+            score += 500.0 * rarityScore;
+        }
+        int minFreq = seed.getMinEdgeFrequency();
+        if (minFreq > 0 && minFreq <= 2) {
+            score += 250.0;
+        }
+
+        // Penalize unstable traces slightly.
+        if (seed.getStability() == edu.nju.fuzzing.model.CoverageEx.Stability.UNSTABLE) {
+            score -= 500.0;
+        }
+
         // Prefer faster seeds (execTimeNanos): use a soft penalty.
         long execTimeNanos = seed.getExecutionTime();
         if (execTimeNanos > 0) {

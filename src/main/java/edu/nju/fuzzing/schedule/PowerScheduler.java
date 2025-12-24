@@ -73,6 +73,30 @@ public class PowerScheduler {
             score *= 1.1;
         }
 
+        // 7. CoverageDB 信号：favored/rarity/redundant/unstable
+        // Favored seeds deserve more energy; redundant and unstable seeds get less.
+        if (seed.isFavored()) {
+            score *= 1.5;
+        }
+        if (seed.isRedundant()) {
+            score *= 0.5;
+        }
+        if (seed.getStability() == edu.nju.fuzzing.model.CoverageEx.Stability.UNSTABLE) {
+            score *= 0.7;
+        }
+
+        // Rare edges: boost proportionally but keep it bounded.
+        // rarityScore is sum(1/freq), usually small; cap multiplier to avoid explosions.
+        double rarity = seed.getRarityScore();
+        if (rarity > 0) {
+            double rarityMul = 1.0 + Math.min(1.0, rarity); // cap at x2.0
+            score *= rarityMul;
+        }
+        int minFreq = seed.getMinEdgeFrequency();
+        if (minFreq > 0 && minFreq <= 2) {
+            score *= 1.2;
+        }
+
         int finalEnergy = (int) score;
         return Math.max(1, Math.min(finalEnergy, MAX_ENERGY));
     }

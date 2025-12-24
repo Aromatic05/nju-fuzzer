@@ -1,5 +1,7 @@
 package edu.nju.fuzzing.model;
 
+import edu.nju.fuzzing.cov.EdgeSet;
+
 import java.io.*;
 import java.util.Arrays;
 import java.util.Properties;
@@ -30,6 +32,17 @@ public class Seed {
     private int handicap;
     private int energy; // 能量缓存
 
+    // --- 4. CoverageDB/调度扩展指标 ---
+    // These fields are hints for scheduling; they may change over time.
+    private boolean favored;
+    private boolean redundant;
+    private int minEdgeFrequency;
+    private double rarityScore;
+    private CoverageEx.Stability stability;
+
+    // Edge set is kept in-memory only (not persisted) to avoid huge .meta files.
+    private transient EdgeSet edges;
+
     // === 元数据持久化 ===
     public void saveMetadata() {
         File parentDir = file.getParentFile();
@@ -47,6 +60,13 @@ public class Seed {
         props.setProperty("exec_time", String.valueOf(executionTime));
         props.setProperty("bitmap_size", String.valueOf(bitmapSize));
         props.setProperty("energy", String.valueOf(energy));
+
+        // Scheduling hints
+        props.setProperty("favored", String.valueOf(favored));
+        props.setProperty("redundant", String.valueOf(redundant));
+        props.setProperty("min_edge_freq", String.valueOf(minEdgeFrequency));
+        props.setProperty("rarity_score", String.valueOf(rarityScore));
+        props.setProperty("stability", stability == null ? CoverageEx.Stability.UNKNOWN.name() : stability.name());
 
         // [新增] 保存类型名称 (如 "XML", "JPEG")
         props.setProperty("seed_type", type.name());
@@ -74,6 +94,12 @@ public class Seed {
         int bitmapSize = 0;
         int energy = 0;
 
+        boolean favored = false;
+        boolean redundant = false;
+        int minEdgeFreq = 0;
+        double rarityScore = 0.0;
+        CoverageEx.Stability stability = CoverageEx.Stability.UNKNOWN;
+
         // [新增] 默认尝试自动检测类型 (解决初始种子没有meta的情况)
         SeedType type = SeedType.detect(data);
 
@@ -91,6 +117,21 @@ public class Seed {
                 bitmapSize = Integer.parseInt(props.getProperty("bitmap_size", "0"));
                 energy = Integer.parseInt(props.getProperty("energy", "0"));
 
+                favored = Boolean.parseBoolean(props.getProperty("favored", "false"));
+                redundant = Boolean.parseBoolean(props.getProperty("redundant", "false"));
+                minEdgeFreq = Integer.parseInt(props.getProperty("min_edge_freq", "0"));
+                try {
+                    rarityScore = Double.parseDouble(props.getProperty("rarity_score", "0.0"));
+                } catch (NumberFormatException ignored) {
+                    rarityScore = 0.0;
+                }
+                String stabilityStr = props.getProperty("stability", CoverageEx.Stability.UNKNOWN.name());
+                try {
+                    stability = CoverageEx.Stability.valueOf(stabilityStr);
+                } catch (IllegalArgumentException ignored) {
+                    stability = CoverageEx.Stability.UNKNOWN;
+                }
+
                 // [新增] 如果 meta 里有记录，优先使用记录的类型
                 String typeStr = props.getProperty("seed_type");
                 if (typeStr != null) {
@@ -106,12 +147,14 @@ public class Seed {
             }
         }
 
-        return new Seed(seedFile, data, parentId, depth, birthType, handicap, wasFuzzed, execTime, bitmapSize, energy, type);
+        return new Seed(seedFile, data, parentId, depth, birthType, handicap, wasFuzzed, execTime, bitmapSize,
+            energy, type, favored, redundant, minEdgeFreq, rarityScore, stability);
     }
 
     // [更新] 全参构造函数
     private Seed(File file, byte[] data, String parentId, int depth, String birthType,
-                 int handicap, boolean wasFuzzed, long execTime, int bitmapSize, int energy, SeedType type) {
+                 int handicap, boolean wasFuzzed, long execTime, int bitmapSize, int energy, SeedType type,
+                 boolean favored, boolean redundant, int minEdgeFrequency, double rarityScore, CoverageEx.Stability stability) {
         this.file = file;
         this.data = Arrays.copyOf(data, data.length);
         this.id = file.getName();
@@ -124,6 +167,13 @@ public class Seed {
         this.bitmapSize = bitmapSize;
         this.energy = energy;
         this.type = type; // [新增]
+
+        this.favored = favored;
+        this.redundant = redundant;
+        this.minEdgeFrequency = Math.max(0, minEdgeFrequency);
+        this.rarityScore = Math.max(0.0, rarityScore);
+        this.stability = stability == null ? CoverageEx.Stability.UNKNOWN : stability;
+        this.edges = EdgeSet.empty();
     }
 
     // [更新] 晋升构造函数 (从 Testcase)
@@ -152,6 +202,13 @@ public class Seed {
         this.executionTime = 0;
         this.bitmapSize = 0;
         this.energy = 0;
+
+        this.favored = false;
+        this.redundant = false;
+        this.minEdgeFrequency = 0;
+        this.rarityScore = 0.0;
+        this.stability = CoverageEx.Stability.UNKNOWN;
+        this.edges = EdgeSet.empty();
     }
 
     // --- Getters ---
@@ -169,6 +226,13 @@ public class Seed {
     public int getBitmapSize() { return bitmapSize; }
     public int getEnergy() { return energy; }
 
+    public boolean isFavored() { return favored; }
+    public boolean isRedundant() { return redundant; }
+    public int getMinEdgeFrequency() { return minEdgeFrequency; }
+    public double getRarityScore() { return rarityScore; }
+    public CoverageEx.Stability getStability() { return stability; }
+    public EdgeSet getEdges() { return edges == null ? EdgeSet.empty() : edges; }
+
     // --- Setters ---
     public void decreaseHandicap() { if (this.handicap > 1) this.handicap--; }
     public void markAsFuzzed() { this.wasFuzzed = true; }
@@ -176,8 +240,18 @@ public class Seed {
     public void setBitmapSize(int s) { this.bitmapSize = s; }
     public void setEnergy(int e) { this.energy = e; }
 
+    public void setFavored(boolean favored) { this.favored = favored; }
+    public void setRedundant(boolean redundant) { this.redundant = redundant; }
+    public void setMinEdgeFrequency(int minEdgeFrequency) { this.minEdgeFrequency = Math.max(0, minEdgeFrequency); }
+    public void setRarityScore(double rarityScore) { this.rarityScore = Math.max(0.0, rarityScore); }
+    public void setStability(CoverageEx.Stability stability) {
+        this.stability = stability == null ? CoverageEx.Stability.UNKNOWN : stability;
+    }
+    public void setEdges(EdgeSet edges) { this.edges = edges == null ? EdgeSet.empty() : edges; }
+
     @Override
     public String toString() {
-        return String.format("Seed[id=%s, type=%s, cov=%d]", id, type, bitmapSize);
+        return String.format("Seed[id=%s, type=%s, cov=%d, favored=%s, redundant=%s, stability=%s]",
+                id, type, bitmapSize, favored, redundant, stability);
     }
 }

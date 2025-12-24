@@ -76,6 +76,19 @@ public class SeedPrioritizerTest {
         Assertions.assertEquals(new1, prioritizer.pick(seeds));
     }
 
+    /** Case 5b: 多个新种子时，favored 应优先 */
+    @Test
+    public void testFavoredUnfuzzedBeatsNonFavored() {
+        Seed s1 = createSeed("s1", false);
+        Seed s2 = createSeed("s2", false);
+        s2.setFavored(true);
+
+        seeds.add(s1);
+        seeds.add(s2);
+
+        Assertions.assertEquals(s2, prioritizer.pick(seeds));
+    }
+
     /** Case 6: 全部都是老种子，进入 Round Robin 模式 (第一次选第0个) */
     @Test
     public void testAllFuzzedStartsRoundRobin() {
