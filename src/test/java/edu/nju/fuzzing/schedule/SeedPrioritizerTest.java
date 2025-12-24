@@ -76,6 +76,35 @@ public class SeedPrioritizerTest {
         Assertions.assertEquals(new1, prioritizer.pick(seeds));
     }
 
+    /** Case 5c: 多个新种子时，bitmapSize 更大的应优先（打分选最优） */
+    @Test
+    public void testHigherBitmapSizeUnfuzzedBeatsLower() {
+        Seed s1 = createSeed("s1", false);
+        Seed s2 = createSeed("s2", false);
+        s1.setBitmapSize(10);
+        s2.setBitmapSize(200);
+
+        seeds.add(s1);
+        seeds.add(s2);
+
+        Assertions.assertEquals(s2, prioritizer.pick(seeds));
+    }
+
+    /** Case 5d: 同分时保持队列顺序稳定（不引入随机性） */
+    @Test
+    public void testTieKeepsOrderForUnfuzzed() {
+        Seed s1 = createSeed("s1", false);
+        Seed s2 = createSeed("s2", false);
+        // 保持两者字段一致，触发同分
+        s1.setBitmapSize(0);
+        s2.setBitmapSize(0);
+
+        seeds.add(s1);
+        seeds.add(s2);
+
+        Assertions.assertEquals(s1, prioritizer.pick(seeds));
+    }
+
     /** Case 5b: 多个新种子时，favored 应优先 */
     @Test
     public void testFavoredUnfuzzedBeatsNonFavored() {

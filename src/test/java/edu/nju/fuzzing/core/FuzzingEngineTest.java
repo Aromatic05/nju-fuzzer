@@ -92,6 +92,60 @@ class FuzzingEngineTest {
         assertTrue(foundExpected, "stdout should contain expected payload");
     }
 
+    @Test
+    void engine_shouldExecuteCommand_inFileModeWithAtAt() throws Exception {
+        Path workdir = tempDir.resolve("workdir_file");
+        Files.createDirectories(workdir);
+
+        TargetSpec spec = new TargetSpec(
+                "DEMO_FILE",
+                Path.of("/bin/cat"),
+                List.of("/bin/cat", "@@"), // FILE mode
+                Map.of(),
+                Duration.ofMillis(500)
+        );
+
+        Executor executor = new ProcessExecutor();
+        FuzzingEngine engine = new FuzzingEngine(
+                workdir,
+                1,
+                spec,
+                executor,
+                Duration.ofMillis(500),
+                0
+        );
+
+        engine.run();
+
+        // exec logs 目录至少有一个 stdout_<id>.log 且包含关键字
+        Path logsDir = workdir.resolve("tmp/exec-logs");
+        assertTrue(Files.isDirectory(logsDir), "exec-logs dir should exist");
+
+        List<Path> stdoutLogs;
+        try (Stream<Path> w = Files.walk(logsDir)) {
+            stdoutLogs = w
+                    .filter(Files::isRegularFile)
+                    .filter(p -> {
+                        String name = p.getFileName().toString();
+                        return name.startsWith("stdout_") && name.endsWith(".log");
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        assertFalse(stdoutLogs.isEmpty(), "should produce stdout_<id>.log");
+
+        byte[] needle = "hello-from-engine".getBytes(StandardCharsets.UTF_8);
+        boolean foundExpected = false;
+        for (Path p : stdoutLogs) {
+            byte[] stdoutBytes = Files.readAllBytes(p);
+            if (containsSubsequence(stdoutBytes, needle)) {
+                foundExpected = true;
+                break;
+            }
+        }
+        assertTrue(foundExpected, "stdout should contain expected payload in FILE mode");
+    }
+
     private static boolean containsSubsequence(byte[] haystack, byte[] needle) {
         if (haystack == null || needle == null) return false;
         if (needle.length == 0) return true;

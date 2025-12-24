@@ -32,6 +32,19 @@ public class PowerSchedulerTest {
         return s;
     }
 
+    private Seed createPlainSeedWithData(byte[] data) {
+        Seed s = Seed.loadWithMetadata(new File("dummy"), data);
+
+        // 去掉新手保护 (Handicap 8 -> 1)
+        for (int i = 0; i < 10; i++) s.decreaseHandicap();
+
+        // 设置普通参数（保持其他因子中性）
+        s.setExecutionTime(100_000 * 1000); // 100ms
+        s.setBitmapSize(100);
+        s.markAsFuzzed();
+        return s;
+    }
+
     /** Case 1: null 输入 */
     @Test
     public void testNullSeed() {
@@ -67,6 +80,34 @@ public class PowerSchedulerTest {
         Seed s = createPlainSeed();
         s.setRarityScore(1.0);
         Assertions.assertEquals(200, scheduler.assignEnergy(s));
+    }
+
+    /** Case 2e: 输入大小因子 - 小输入 (<=128) 略增能量 */
+    @Test
+    public void testSmallInputBoostsEnergy() {
+        Seed s = createPlainSeedWithData(new byte[64]);
+        // 100 * 1.2 = 120
+        Assertions.assertEquals(120, scheduler.assignEnergy(s));
+    }
+
+    /** Case 2f: 输入大小因子 - 大输入 (>=256KiB) 降低能量 */
+    @Test
+    public void testLargeInputReducesEnergy() {
+        Seed s = createPlainSeedWithData(new byte[300 * 1024]);
+        // 100 * 0.7 = 70
+        Assertions.assertEquals(70, scheduler.assignEnergy(s));
+    }
+
+    /** Case 2g: 类型因子 - 可识别类型（非 UNKNOWN）略增能量 */
+    @Test
+    public void testKnownTypeBoostsEnergy() {
+        byte[] data = new byte[200];
+        byte[] marker = "local a=1".getBytes();
+        System.arraycopy(marker, 0, data, 0, marker.length);
+
+        Seed s = createPlainSeedWithData(data);
+        // inputSize=200 -> size 因子中性；type!=UNKNOWN -> x1.1
+        Assertions.assertEquals(110, scheduler.assignEnergy(s));
     }
 
     /** Case 3: 时间因子 - 极快 (<20ms) */
