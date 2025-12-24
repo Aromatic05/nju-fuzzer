@@ -137,6 +137,16 @@ public class ShmCoverageMonitorEx implements CoverageMonitorEx {
     }
 
     /**
+     * Creates a monitor with explicit shared memory ID and map size.
+     */
+    public static ShmCoverageMonitorEx create(int shmId, int mapSize) {
+        SysVShmBitmapSource source = new SysVShmBitmapSource(shmId, mapSize);
+        source.attach();
+        CoverageDiffStrategyEx strategy = CoverageDiffStrategyEx.createDefault(mapSize);
+        return new ShmCoverageMonitorEx(source, strategy);
+    }
+
+    /**
      * Creates a monitor with a mock bitmap source (for testing).
      * Note: MockBitmapSource should be created in the test package.
      */

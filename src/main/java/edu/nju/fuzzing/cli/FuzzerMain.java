@@ -6,6 +6,8 @@ import edu.nju.fuzzing.cov.CoverageMonitorEx;
 import edu.nju.fuzzing.cov.NullCoverageMonitor;
 import edu.nju.fuzzing.cov.ShmCoverageMonitor;
 import edu.nju.fuzzing.cov.ShmCoverageMonitorEx;
+import edu.nju.fuzzing.cov.SysVShmBitmapSource;
+import edu.nju.fuzzing.cov.SysVShmSegment;
 import edu.nju.fuzzing.core.FuzzingEngine;
 import edu.nju.fuzzing.exec.Executor;
 import edu.nju.fuzzing.exec.ProcessExecutor;
@@ -49,22 +51,35 @@ public class FuzzerMain {
         // binary: use argv[0] as path-like string; keep as Path for later
         Path binary = Path.of(argvTemplate.get(0));
 
+        CoverageSetup coverage = setupCoverage(cli.coverage());
+        // Ensure any auto-created SHM segment is cleaned up on exit.
+        if (coverage.cleanup != null) {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                try {
+                    coverage.monitor.close();
+                } catch (Exception ignored) {
+                }
+                try {
+                    coverage.cleanup.close();
+                } catch (Exception ignored) {
+                }
+            }, "nju-fuzzer-shm-cleanup"));
+        }
+
         TargetSpec spec = new TargetSpec(
                 cli.tid(),
                 binary,
                 argvTemplate,
-                Map.of(),
+                coverage.targetEnv,
                 Duration.ofMillis(timeoutMs)
         );
 
         Executor executor = new ProcessExecutor();
 
-        CoverageMonitor monitor = createCoverageMonitor(cli.coverage());
-        CoverageDB coverageDB = null;
-        if (!(monitor instanceof NullCoverageMonitor)) {
-            int mapSize = (monitor instanceof CoverageMonitorEx ex) ? ex.getMapSize() : 65536;
-            coverageDB = new CoverageDB(mapSize);
-        }
+        CoverageMonitor monitor = coverage.monitor;
+        CoverageDB coverageDB = (monitor instanceof NullCoverageMonitor)
+            ? null
+            : new CoverageDB(coverage.mapSize);
 
         FuzzingEngine engine = new FuzzingEngine(
             workdir,
@@ -82,14 +97,80 @@ public class FuzzerMain {
         System.out.println("NJUFuzzer skeleton finished.");
     }
 
-    private static CoverageMonitor createCoverageMonitor(String modeRaw) {
+    private static final class CoverageSetup {
+        private final CoverageMonitor monitor;
+        private final Map<String, String> targetEnv;
+        private final int mapSize;
+        private final AutoCloseable cleanup;
+
+        private CoverageSetup(CoverageMonitor monitor, Map<String, String> targetEnv, int mapSize, AutoCloseable cleanup) {
+            this.monitor = monitor;
+            this.targetEnv = targetEnv;
+            this.mapSize = mapSize;
+            this.cleanup = cleanup;
+        }
+    }
+
+    private static CoverageSetup setupCoverage(String modeRaw) {
         String mode = (modeRaw == null) ? "none" : modeRaw.trim().toLowerCase();
         return switch (mode) {
-            case "none" -> new NullCoverageMonitor(65536);
-            case "shm" -> ShmCoverageMonitor.fromEnvironment();
-            case "shmex" -> ShmCoverageMonitorEx.fromEnvironment();
+            case "none" -> new CoverageSetup(new NullCoverageMonitor(SysVShmBitmapSource.DEFAULT_MAP_SIZE), Map.of(),
+                    SysVShmBitmapSource.DEFAULT_MAP_SIZE, null);
+
+            case "shm", "shmex" -> {
+                String shmIdStr = System.getenv(SysVShmBitmapSource.ENV_SHM_ID);
+
+                // If user already provided __AFL_SHM_ID, use it and still forward it explicitly to the child env.
+                if (shmIdStr != null && !shmIdStr.isBlank()) {
+                    CoverageMonitor monitor = mode.equals("shm")
+                            ? ShmCoverageMonitor.fromEnvironment()
+                            : ShmCoverageMonitorEx.fromEnvironment();
+
+                    int mapSize = (monitor instanceof CoverageMonitorEx ex)
+                            ? ex.getMapSize()
+                            : SysVShmBitmapSource.DEFAULT_MAP_SIZE;
+
+                    Map<String, String> env = Map.of(
+                            SysVShmBitmapSource.ENV_SHM_ID, shmIdStr.trim(),
+                            SysVShmBitmapSource.ENV_MAP_SIZE, String.valueOf(mapSize)
+                    );
+
+                    yield new CoverageSetup(monitor, env, mapSize, null);
+                }
+
+                // Otherwise: auto-create a new SysV SHM segment and inject into target env.
+                int mapSize = parseIntOrDefault(System.getenv(SysVShmBitmapSource.ENV_MAP_SIZE),
+                        SysVShmBitmapSource.DEFAULT_MAP_SIZE);
+                SysVShmSegment seg = SysVShmSegment.create(mapSize);
+
+                CoverageMonitor monitor = mode.equals("shm")
+                        ? ShmCoverageMonitor.create(seg.shmId(), mapSize)
+                        : ShmCoverageMonitorEx.create(seg.shmId(), mapSize);
+
+                Map<String, String> env = Map.of(
+                        SysVShmBitmapSource.ENV_SHM_ID, String.valueOf(seg.shmId()),
+                        SysVShmBitmapSource.ENV_MAP_SIZE, String.valueOf(mapSize)
+                );
+
+                System.out.println("[coverage] auto-created SysV SHM: " + SysVShmBitmapSource.ENV_SHM_ID + "=" + seg.shmId()
+                        + ", " + SysVShmBitmapSource.ENV_MAP_SIZE + "=" + mapSize);
+
+                yield new CoverageSetup(monitor, env, mapSize, seg);
+            }
+
             default -> throw new IllegalArgumentException("Unknown --coverage mode: " + modeRaw +
                     " (expected: none|shm|shmex)");
         };
+    }
+
+    private static int parseIntOrDefault(String raw, int defaultValue) {
+        if (raw == null) return defaultValue;
+        String s = raw.trim();
+        if (s.isEmpty()) return defaultValue;
+        try {
+            return Integer.parseInt(s);
+        } catch (NumberFormatException ignored) {
+            return defaultValue;
+        }
     }
 }
