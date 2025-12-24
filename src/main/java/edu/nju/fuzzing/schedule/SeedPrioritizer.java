@@ -12,6 +12,31 @@ public class SeedPrioritizer {
 
     private int currentIndex = 0;
 
+    private static double scoreForSelection(Seed seed) {
+        // Higher score = more likely to be fuzzed next.
+        // Keep this deterministic and monotonic w.r.t. useful metadata.
+        double score = 0.0;
+
+        // Prefer seeds that likely cover more (once metadata exists).
+        score += Math.max(0, seed.getBitmapSize());
+
+        // Prefer faster seeds (execTimeNanos): use a soft penalty.
+        long execTimeNanos = seed.getExecutionTime();
+        if (execTimeNanos > 0) {
+            // Convert to microseconds to avoid overflow and reduce sensitivity.
+            long execUs = Math.max(1, execTimeNanos / 1000L);
+            score += 1_000_000.0 / execUs;
+        }
+
+        // Prefer shallower seeds a bit (reduce getting stuck deep).
+        score += Math.max(0, 16 - seed.getDepth());
+
+        // Give a small boost to seeds with higher handicap (new seeds).
+        score += Math.max(0, seed.getHandicap());
+
+        return score;
+    }
+
     /**
      * 从种子列表中选出一个种子
      *
@@ -23,11 +48,20 @@ public class SeedPrioritizer {
             return null;
         }
 
-        // 1. 【优先策略】寻找未被 Fuzz 过的“处女”种子
+        // 1) Prefer unfuzzed seeds, but choose the best one deterministically.
+        Seed bestUnfuzzed = null;
+        double bestScore = Double.NEGATIVE_INFINITY;
         for (Seed seed : seeds) {
             if (!seed.isWasFuzzed()) {
-                return seed;
+                double s = scoreForSelection(seed);
+                if (bestUnfuzzed == null || s > bestScore) {
+                    bestUnfuzzed = seed;
+                    bestScore = s;
+                }
             }
+        }
+        if (bestUnfuzzed != null) {
+            return bestUnfuzzed;
         }
 
         // 2. 【兜底策略】Round Robin
