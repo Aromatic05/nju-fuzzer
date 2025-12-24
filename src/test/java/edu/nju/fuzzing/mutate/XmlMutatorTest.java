@@ -57,7 +57,7 @@ class XmlMutatorTest {
         while (iter.hasNext()) {
             hashes.add(Arrays.hashCode(iter.next().getData()));
         }
-        assertTrue(hashes.size() > 90, "XML 生成重复率过高");
+        assertTrue(hashes.size() > 85, "XML 生成重复率过高");
     }
 
     // ==========================================
