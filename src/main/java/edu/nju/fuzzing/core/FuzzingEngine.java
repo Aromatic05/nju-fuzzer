@@ -14,6 +14,7 @@ import edu.nju.fuzzing.model.Seed;
 import edu.nju.fuzzing.model.TargetSpec;
 import edu.nju.fuzzing.model.Testcase;
 import edu.nju.fuzzing.mutate.Mutator;
+import edu.nju.fuzzing.mutate.MutatorFactory;
 import edu.nju.fuzzing.queue.SeedQueue;
 import edu.nju.fuzzing.schedule.PowerScheduler;
 import edu.nju.fuzzing.schedule.SeedPrioritizer;
@@ -119,19 +120,19 @@ public class FuzzingEngine {
     public FuzzingEngine(Path workdir, int durationSec, TargetSpec targetSpec, Executor executor, Duration timeout, int tickIntervalMs)
             throws IOException {
         this(
-                workdir,
-                workdir.resolve("seeds"),
-                durationSec,
-                targetSpec,
-                new InstrumentedExecutorHarness(executor, new NullCoverageMonitor(65536)),
-                new SeedQueue(),
-                new SeedPrioritizer(),
-                new PowerScheduler(),
-                identityMutator(),
-                null,
-                new FileCorpusManager(workdir),
-                new FuzzStats(targetSpec.tid()),
-                tickIntervalMs
+            workdir,
+            workdir.resolve("seeds"),
+            durationSec,
+            targetSpec,
+            new InstrumentedExecutorHarness(executor, new NullCoverageMonitor(65536)),
+            new SeedQueue(),
+            new SeedPrioritizer(),
+            new PowerScheduler(),
+            defaultEngineMutator(),
+            null,
+            new FileCorpusManager(workdir),
+            new FuzzStats(targetSpec.tid()),
+            tickIntervalMs
         );
     }
 
@@ -146,19 +147,19 @@ public class FuzzingEngine {
             int tickIntervalMs
     ) throws IOException {
         this(
-                workdir,
-                workdir.resolve("seeds"),
-                durationSec,
-                targetSpec,
-                new InstrumentedExecutorHarness(executor, coverageMonitor),
+            workdir,
+            workdir.resolve("seeds"),
+            durationSec,
+            targetSpec,
+            new InstrumentedExecutorHarness(executor, coverageMonitor),
                 new SeedQueue(),
-                new SeedPrioritizer(),
-                new PowerScheduler(),
-                identityMutator(),
-                null,
-                corpusManager,
-                new FuzzStats(targetSpec.tid()),
-                tickIntervalMs
+            new SeedPrioritizer(),
+            new PowerScheduler(),
+                defaultEngineMutator(),
+            null,
+            corpusManager,
+            new FuzzStats(targetSpec.tid()),
+            tickIntervalMs
         );
     }
 
@@ -212,6 +213,41 @@ public class FuzzingEngine {
                 if (remaining <= 0) throw new java.util.NoSuchElementException();
                 remaining--;
                 return new Testcase(seed.getDataCopy(), seed, "identity");
+            }
+        };
+    }
+
+    /**
+     * Default mutator for the engine: format-aware mutators with a Havoc fallback.
+     *
+     * To keep the pipeline stable (tests/CLI demos), we always run one identity testcase
+     * per seed first, then spend the remaining energy on the selected mutator.
+     */
+    private static Mutator defaultEngineMutator() {
+        // Keep this constructor-friendly (no need to access the live SeedQueue here).
+        // Format-aware selection is based on the current seed's SeedType.
+        // Havoc mutator's splicing uses a corpus list; we pass an empty list here to
+        // avoid constructor wiring complexity and keep behavior deterministic in tests.
+        MutatorFactory factory = new MutatorFactory(java.util.List.of());
+        return (seed, energy) -> new Iterator<>() {
+            private boolean emittedIdentity = false;
+            private final int total = Math.max(1, energy);
+            private final Iterator<Testcase> delegate = factory
+                    .createMutator(seed)
+                    .mutate(seed, Math.max(0, total - 1));
+
+            @Override
+            public boolean hasNext() {
+                return !emittedIdentity || delegate.hasNext();
+            }
+
+            @Override
+            public Testcase next() {
+                if (!emittedIdentity) {
+                    emittedIdentity = true;
+                    return new Testcase(seed.getDataCopy(), seed, "identity");
+                }
+                return delegate.next();
             }
         };
     }
