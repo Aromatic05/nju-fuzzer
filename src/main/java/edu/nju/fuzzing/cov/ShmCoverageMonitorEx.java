@@ -47,7 +47,10 @@ public class ShmCoverageMonitorEx implements CoverageMonitorEx {
      */
     public void start() {
         if (started) return;
-        // BitmapSource handles attachment internally
+        // Attach to shared memory if needed.
+        if (bitmapSource instanceof SysVShmBitmapSource shmSource && !shmSource.isAttached()) {
+            shmSource.attach();
+        }
         started = true;
     }
 
@@ -126,7 +129,8 @@ public class ShmCoverageMonitorEx implements CoverageMonitorEx {
             mapSize = Integer.parseInt(mapSizeStr);
         }
 
-        BitmapSource source = new SysVShmBitmapSource(mapSize, shmId);
+        SysVShmBitmapSource source = new SysVShmBitmapSource(shmId, mapSize);
+        source.attach();
         CoverageDiffStrategyEx strategy = CoverageDiffStrategyEx.createDefault(mapSize);
         
         return new ShmCoverageMonitorEx(source, strategy);
