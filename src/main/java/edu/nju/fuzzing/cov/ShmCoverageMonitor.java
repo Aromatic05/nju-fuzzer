@@ -1,6 +1,7 @@
 package edu.nju.fuzzing.cov;
 
 import edu.nju.fuzzing.model.Coverage;
+import edu.nju.fuzzing.model.CoverageEx;
 import edu.nju.fuzzing.model.RunResult;
 
 import java.util.concurrent.atomic.AtomicLong;
@@ -12,10 +13,11 @@ import java.util.concurrent.atomic.AtomicLong;
  * - Coverage diff calculation using "seen non-zero bytes" strategy
  * - Statistics tracking for monitoring fuzzing progress
  */
-public class ShmCoverageMonitor implements CoverageMonitor {
+public class ShmCoverageMonitor implements CoverageMonitorEx {
 
     private final BitmapSource bitmapSource;
     private final CoverageDiffStrategy diffStrategy;
+    private final CoverageDiffStrategyEx diffStrategyEx;
     private final int mapSize;
     private final byte[] bitmapBuffer;
 
@@ -24,6 +26,10 @@ public class ShmCoverageMonitor implements CoverageMonitor {
     private final AtomicLong lastInterestingExecId = new AtomicLong(0);
     private volatile long lastInterestingAtMillis = 0;
     private volatile long startTimeMillis = 0;
+
+    // Optional; this monitor focuses on producing edge-level data.
+    // The global judge (CoverageDB) is currently owned by FuzzingEngine.
+    private volatile boolean stabilityDetectionEnabled = false;
 
     /**
      * Creates a ShmCoverageMonitor with the given bitmap source and diff strategy.
@@ -36,6 +42,7 @@ public class ShmCoverageMonitor implements CoverageMonitor {
         this.diffStrategy = diffStrategy;
         this.mapSize = bitmapSource.mapSize();
         this.bitmapBuffer = new byte[mapSize];
+        this.diffStrategyEx = CoverageDiffStrategyEx.wrap(diffStrategy, this.mapSize);
     }
 
     /**
@@ -124,6 +131,75 @@ public class ShmCoverageMonitor implements CoverageMonitor {
                 bitmapHash,
                 interesting
         );
+    }
+
+    @Override
+    public CoverageEx afterRunEx(RunResult result) {
+        long execId = execCounter.incrementAndGet();
+        long timestamp = System.currentTimeMillis();
+
+        if (!bitmapSource.isAttached()) {
+            return new CoverageEx(
+                    execId,
+                    timestamp,
+                    mapSize,
+                    0,
+                    0,
+                    0L,
+                    false,
+                    EdgeSet.empty(),
+                    EdgeSet.empty(),
+                    result == null ? 0L : result.execTimeNanos(),
+                    CoverageEx.Stability.UNKNOWN
+            );
+        }
+
+        bitmapSource.readInto(bitmapBuffer);
+        DiffResultEx diff = diffStrategyEx.diffEx(bitmapBuffer);
+
+        if (diff.interesting()) {
+            lastInterestingExecId.set(execId);
+            lastInterestingAtMillis = timestamp;
+        }
+
+        return new CoverageEx(
+                execId,
+                timestamp,
+                mapSize,
+                diff.nonZeroBytes(),
+                diff.newCount(),
+                diff.bitmapHash(),
+                diff.interesting(),
+                diff.hitEdges(),
+                diff.newEdges(),
+                result.execTimeNanos(),
+                CoverageEx.Stability.UNKNOWN
+        );
+    }
+
+    @Override
+    public CoverageDB getCoverageDB() {
+        return null;
+    }
+
+    @Override
+    public CoverageDiffStrategyEx getStrategyEx() {
+        return diffStrategyEx;
+    }
+
+    @Override
+    public boolean isStabilityDetectionEnabled() {
+        return stabilityDetectionEnabled;
+    }
+
+    @Override
+    public void setStabilityDetectionEnabled(boolean enabled) {
+        this.stabilityDetectionEnabled = enabled;
+    }
+
+    @Override
+    public int getTotalEdgesSeen() {
+        return diffStrategyEx.totalSeenBytes();
     }
 
     /**
