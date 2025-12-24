@@ -45,10 +45,11 @@ class FuzzerMainCmdSmokeTest {
 
         assertFalse(stdoutLogs.isEmpty(), "should produce stdout_<id>.log");
 
+        byte[] needle = "hello-from-engine".getBytes(StandardCharsets.UTF_8);
         boolean found = false;
         for (Path p : stdoutLogs) {
-            String stdout = Files.readString(p, StandardCharsets.UTF_8);
-            if (stdout.contains("hello-from-engine")) {
+            byte[] stdoutBytes = Files.readAllBytes(p);
+            if (containsSubsequence(stdoutBytes, needle)) {
                 found = true;
                 break;
             }
@@ -84,14 +85,30 @@ class FuzzerMainCmdSmokeTest {
 
         assertFalse(stdoutLogs.isEmpty(), "should produce stdout_<id>.log");
 
+        byte[] needle = "hello-from-engine".getBytes(StandardCharsets.UTF_8);
         boolean found = false;
         for (Path p : stdoutLogs) {
-            String stdout = Files.readString(p, StandardCharsets.UTF_8);
-            if (stdout.contains("hello-from-engine")) {
+            byte[] stdoutBytes = Files.readAllBytes(p);
+            if (containsSubsequence(stdoutBytes, needle)) {
                 found = true;
                 break;
             }
         }
         assertTrue(found, "stdout should contain file content in FILE mode");
+    }
+
+    private static boolean containsSubsequence(byte[] haystack, byte[] needle) {
+        if (haystack == null || needle == null) return false;
+        if (needle.length == 0) return true;
+        if (haystack.length < needle.length) return false;
+
+        outer:
+        for (int i = 0; i <= haystack.length - needle.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) continue outer;
+            }
+            return true;
+        }
+        return false;
     }
 }
