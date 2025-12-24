@@ -163,6 +163,41 @@ public class FuzzingEngine {
         );
     }
 
+    /**
+     * CLI-friendly constructor: allows selecting seedsDir, coverage monitor, and CoverageDB.
+     *
+     * Default behavior remains compatible:
+     * - If you pass a NullCoverageMonitor, you can pass coverageDB as null.
+     * - If you pass a SHM-based monitor, pass a non-null CoverageDB to enable global judging.
+     */
+    public FuzzingEngine(
+            Path workdir,
+            Path initialSeedDir,
+            int durationSec,
+            TargetSpec targetSpec,
+            Executor executor,
+            Duration timeout,
+            CoverageMonitor coverageMonitor,
+            CoverageDB coverageDB,
+            int tickIntervalMs
+    ) throws IOException {
+        this(
+                workdir,
+                initialSeedDir,
+                durationSec,
+                targetSpec,
+                new InstrumentedExecutorHarness(executor, coverageMonitor),
+                new SeedQueue(),
+                new SeedPrioritizer(),
+                new PowerScheduler(),
+                defaultEngineMutator(),
+                coverageDB,
+                new FileCorpusManager(workdir),
+                new FuzzStats(targetSpec.tid()),
+                tickIntervalMs
+        );
+    }
+
     private FuzzingEngine(
             Path workdir,
             Path initialSeedDir,
