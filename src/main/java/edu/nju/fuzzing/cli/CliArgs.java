@@ -1,6 +1,7 @@
 package edu.nju.fuzzing.cli;
 
 import java.nio.file.Path;
+import java.util.Set;
 
 public record CliArgs(
         Path workdir,
@@ -9,5 +10,6 @@ public record CliArgs(
         int timeoutMs,
         String tid,
         String cmdLine,
-        String coverage
+        String coverage,
+        Set<Integer> nonCrashExitCodes
 ) {}

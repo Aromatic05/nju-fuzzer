@@ -9,6 +9,7 @@ import edu.nju.fuzzing.cov.CoverageMonitorEx;
 import edu.nju.fuzzing.cov.EdgeSet;
 import edu.nju.fuzzing.cov.NullCoverageMonitor;
 import edu.nju.fuzzing.exec.CommandResolver;
+import edu.nju.fuzzing.exec.CrashOracle;
 import edu.nju.fuzzing.exec.Executor;
 import edu.nju.fuzzing.model.ExecResult;
 import edu.nju.fuzzing.model.ExecInput;
@@ -58,6 +59,9 @@ public class FuzzingEngine {
     private final CorpusManager corpusManager;  // 语料库管理
     private final FuzzStats fuzzStats;          // 统计组件
 
+    // Crash classification policy
+    private final CrashOracle crashOracle;
+
     // --- 辅助组件 ---
     private final StatusPrinter statusPrinter;
     
@@ -87,7 +91,8 @@ public class FuzzingEngine {
             Mutator mutator,
             CoverageDB coverageDB,
             CorpusManager corpusManager,
-            FuzzStats fuzzStats) {
+            FuzzStats fuzzStats,
+            CrashOracle crashOracle) {
         
         this.workdir = workdir;
         this.initialSeedDir = initialSeedDir;
@@ -102,6 +107,8 @@ public class FuzzingEngine {
         this.coverageDB = chooseCoverageDB(harness, coverageDB);
         this.corpusManager = corpusManager;
         this.fuzzStats = fuzzStats;
+
+        this.crashOracle = (crashOracle != null) ? crashOracle : CrashOracle.defaultOracle();
 
         this.tickIntervalMs = 0;
 
@@ -135,6 +142,7 @@ public class FuzzingEngine {
             null,
             new FileCorpusManager(workdir),
             new FuzzStats(targetSpec.tid()),
+            CrashOracle.defaultOracle(),
             tickIntervalMs
         );
     }
@@ -162,6 +170,7 @@ public class FuzzingEngine {
             null,
             corpusManager,
             new FuzzStats(targetSpec.tid()),
+            CrashOracle.defaultOracle(),
             tickIntervalMs
         );
     }
@@ -196,10 +205,44 @@ public class FuzzingEngine {
                 defaultEngineMutator(),
                 coverageDB,
                 new FileCorpusManager(workdir),
-                new FuzzStats(targetSpec.tid()),
-                tickIntervalMs
+            new FuzzStats(targetSpec.tid()),
+            CrashOracle.defaultOracle(),
+            tickIntervalMs
         );
     }
+
+        /**
+         * CLI-friendly constructor with configurable crash classification.
+         */
+        public FuzzingEngine(
+            Path workdir,
+            Path initialSeedDir,
+            int durationSec,
+            TargetSpec targetSpec,
+            Executor executor,
+            Duration timeout,
+            CoverageMonitor coverageMonitor,
+            CoverageDB coverageDB,
+            CrashOracle crashOracle,
+            int tickIntervalMs
+        ) throws IOException {
+        this(
+            workdir,
+            initialSeedDir,
+            durationSec,
+            targetSpec,
+            new InstrumentedExecutorHarness(executor, coverageMonitor),
+            new SeedQueue(),
+            new SeedPrioritizer(),
+            new PowerScheduler(),
+            defaultEngineMutator(),
+            coverageDB,
+            new FileCorpusManager(workdir),
+            new FuzzStats(targetSpec.tid()),
+            crashOracle,
+            tickIntervalMs
+        );
+        }
 
     private static CoverageDB chooseCoverageDB(ExecutorHarness harness, CoverageDB injected) {
         if (injected != null) return injected;
@@ -223,6 +266,7 @@ public class FuzzingEngine {
             CoverageDB coverageDB,
             CorpusManager corpusManager,
             FuzzStats fuzzStats,
+            CrashOracle crashOracle,
             int tickIntervalMs
     ) {
         this.workdir = workdir;
@@ -237,6 +281,7 @@ public class FuzzingEngine {
         this.coverageDB = coverageDB;
         this.corpusManager = corpusManager;
         this.fuzzStats = fuzzStats;
+        this.crashOracle = (crashOracle != null) ? crashOracle : CrashOracle.defaultOracle();
         this.tickIntervalMs = Math.max(0, tickIntervalMs);
 
         this.statusPrinter = StatusPrinter.builder()
@@ -389,7 +434,7 @@ public class FuzzingEngine {
                     }
 
                     // F. 结果处理
-                    if (result.isCrash()) {
+                    if (crashOracle.isCrash(result.run())) {
                         handleCrash(tc, result);
                         continue;
                     }

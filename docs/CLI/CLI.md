@@ -48,6 +48,13 @@ FILE 模式（argv 中包含 `@@`，将输入写入固定文件并把路径替�
 - `--tid`：任务 ID（默认 `DEMO`）
 - `--cmd`：目标命令行（默认 `/bin/cat`）
 - `--coverage`：`none|shm|shmex`（默认 `none`；非法值会 fail-fast 抛出异常）
+- `--nonCrashExitCodes`：逗号或空格分隔的 exit code 白名单（默认空；示例：`1,2,4`）
+
+Crash 判定口径：
+
+- 默认情况下：`exitCode != 0` 会被认为是 crash（历史行为）。
+- 如果提供了 `--nonCrashExitCodes`，则这些退出码不会触发 crash 分支（不会落盘到 `crashes/`、不会计入 crash_count），而是按“非 crash 的正常执行结果”继续走覆盖率评估/晋升逻辑。
+- 为避免手动中断污染统计，`130`（SIGINT）与 `143`（SIGTERM）会被默认视为 non-crash（可与 `--nonCrashExitCodes` 合并）。
 
 已知限制：
 

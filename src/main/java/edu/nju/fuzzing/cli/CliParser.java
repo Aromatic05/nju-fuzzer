@@ -3,6 +3,8 @@ package edu.nju.fuzzing.cli;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 public final class CliParser {
 
@@ -18,8 +20,28 @@ public final class CliParser {
         String tid = m.getOrDefault("--tid", "DEMO");
         String cmd = m.getOrDefault("--cmd", "/bin/cat"); // default demo
         String coverage = m.getOrDefault("--coverage", "none");
+        Set<Integer> nonCrashExitCodes = parseExitCodes(m.get("--nonCrashExitCodes"));
 
-        return new CliArgs(workdir, seedsDir, duration, timeoutMs, tid, cmd, coverage);
+        return new CliArgs(workdir, seedsDir, duration, timeoutMs, tid, cmd, coverage, nonCrashExitCodes);
+    }
+
+    private static Set<Integer> parseExitCodes(String raw) {
+        if (raw == null) return Set.of();
+        String s = raw.trim();
+        if (s.isEmpty()) return Set.of();
+
+        Set<Integer> out = new TreeSet<>();
+        for (String part : s.split("[\\s,]+")) {
+            if (part == null) continue;
+            String p = part.trim();
+            if (p.isEmpty()) continue;
+            try {
+                out.add(Integer.parseInt(p));
+            } catch (NumberFormatException ignored) {
+                // Ignore invalid tokens to keep CLI parser minimal & robust.
+            }
+        }
+        return Set.copyOf(out);
     }
 
     private static Map<String, String> parseArgs(String[] args) {
