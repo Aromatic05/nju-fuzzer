@@ -97,6 +97,66 @@ class FuzzerMainCmdSmokeTest {
         assertTrue(found, "stdout should contain file content in FILE mode");
     }
 
+    @Test
+    void main_withSeedsOverride_shouldUseThatSeedContent() throws Exception {
+        Path workdir = tempDir.resolve("w3");
+        Path seedsDir = tempDir.resolve("seeds");
+        Files.createDirectories(seedsDir);
+
+        byte[] payload = "from-custom-seeds".getBytes(StandardCharsets.UTF_8);
+        Files.write(seedsDir.resolve("seed1"), payload);
+
+        FuzzerMain.main(new String[]{
+                "--workdir", workdir.toString(),
+                "--seeds", seedsDir.toString(),
+                "--duration", "1",
+                "--timeout", "500",
+                "--tid", "T_SEEDS",
+                "--cmd", "/bin/cat",
+                "--coverage", "none"
+        });
+
+        Path logsDir = workdir.resolve("tmp/exec-logs");
+        assertTrue(Files.isDirectory(logsDir), "exec-logs dir should exist");
+
+        List<Path> stdoutLogs;
+        try (Stream<Path> w = Files.walk(logsDir)) {
+            stdoutLogs = w
+                    .filter(Files::isRegularFile)
+                    .filter(p -> {
+                        String name = p.getFileName().toString();
+                        return name.startsWith("stdout_") && name.endsWith(".log");
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        assertFalse(stdoutLogs.isEmpty(), "should produce stdout_<id>.log");
+
+        boolean found = false;
+        for (Path p : stdoutLogs) {
+            byte[] stdoutBytes = Files.readAllBytes(p);
+            if (containsSubsequence(stdoutBytes, payload)) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found, "stdout should contain custom seed payload");
+    }
+
+    @Test
+    void main_withInvalidCoverage_shouldFailFast() {
+        Path workdir = tempDir.resolve("w4");
+
+        assertThrows(IllegalArgumentException.class, () -> FuzzerMain.main(new String[]{
+                "--workdir", workdir.toString(),
+                "--duration", "1",
+                "--timeout", "500",
+                "--tid", "T_BAD_COV",
+                "--cmd", "/bin/cat",
+                "--coverage", "nope"
+        }));
+    }
+
     private static boolean containsSubsequence(byte[] haystack, byte[] needle) {
         if (haystack == null || needle == null) return false;
         if (needle.length == 0) return true;
