@@ -9,6 +9,7 @@ import edu.nju.fuzzing.cov.ShmCoverageMonitorEx;
 import edu.nju.fuzzing.cov.SysVShmBitmapSource;
 import edu.nju.fuzzing.cov.SysVShmSegment;
 import edu.nju.fuzzing.core.FuzzingEngine;
+import edu.nju.fuzzing.exec.CrashOracle;
 import edu.nju.fuzzing.exec.Executor;
 import edu.nju.fuzzing.exec.ProcessExecutor;
 import edu.nju.fuzzing.model.TargetSpec;
@@ -76,6 +77,13 @@ public class FuzzerMain {
 
         Executor executor = new ProcessExecutor();
 
+        CrashOracle crashOracle = CrashOracle.withNonCrashExitCodes(cli.nonCrashExitCodes());
+
+        // Print the effective crash policy for transparency (includes defaults like 130/143).
+        if (crashOracle.nonCrashExitCodes() != null && !crashOracle.nonCrashExitCodes().isEmpty()) {
+            System.out.println("effectiveNonCrashExitCodes = " + crashOracle.nonCrashExitCodes());
+        }
+
         CoverageMonitor monitor = coverage.monitor;
         CoverageDB coverageDB = null;
         if (!(monitor instanceof NullCoverageMonitor)) {
@@ -96,6 +104,7 @@ public class FuzzerMain {
             Duration.ofMillis(timeoutMs),
             monitor,
             coverageDB,
+            crashOracle,
             0
         );
         engine.run();

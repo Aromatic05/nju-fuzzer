@@ -19,6 +19,7 @@ class CliParserTest {
         assertEquals("DEMO", cli.tid());
         assertEquals("/bin/cat", cli.cmdLine());
         assertEquals("none", cli.coverage());
+        assertTrue(cli.nonCrashExitCodes().isEmpty());
     }
 
     @Test
@@ -34,6 +35,7 @@ class CliParserTest {
 
         assertEquals(Path.of("/tmp/mywd"), cli.workdir());
         assertEquals(Path.of("/tmp/mywd").resolve("seeds"), cli.seedsDir());
+        assertTrue(cli.nonCrashExitCodes().isEmpty());
     }
 
     @Test
@@ -49,5 +51,20 @@ class CliParserTest {
         });
 
         assertEquals(Path.of("/tmp/seeds"), cli.seedsDir());
+    }
+
+    @Test
+    void parse_nonCrashExitCodes_shouldParseCommaOrSpaceSeparated() {
+        CliArgs cli = CliParser.parse(new String[]{
+                "--workdir", "/tmp/mywd",
+                "--duration", "1",
+                "--timeout", "500",
+                "--tid", "T1",
+                "--cmd", "/bin/cat",
+                "--coverage", "none",
+                "--nonCrashExitCodes", "1, 2 4"
+        });
+
+        assertEquals(java.util.Set.of(1, 2, 4), cli.nonCrashExitCodes());
     }
 }
