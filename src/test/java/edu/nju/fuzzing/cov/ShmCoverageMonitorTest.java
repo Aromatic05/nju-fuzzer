@@ -1,6 +1,7 @@
 package edu.nju.fuzzing.cov;
 
 import edu.nju.fuzzing.model.Coverage;
+import edu.nju.fuzzing.model.CoverageEx;
 import edu.nju.fuzzing.model.RunResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -72,6 +73,20 @@ class ShmCoverageMonitorTest {
 
         assertEquals(3, coverage.nonZeroBytes());
         assertEquals(3, coverage.newBytes());
+        assertTrue(coverage.interesting());
+    }
+
+    @Test
+    void testAfterRunExProvidesEdgeSets() {
+        mockBitmapSource.setByte(0, 1);
+        mockBitmapSource.setByte(100, 5);
+
+        CoverageEx coverage = monitor.afterRunEx(createNormalResult());
+
+        assertNotNull(coverage);
+        assertFalse(coverage.hitEdges().isEmpty());
+        assertFalse(coverage.newEdges().isEmpty());
+        assertEquals(coverage.newEdges().size(), coverage.newEdgeCount());
         assertTrue(coverage.interesting());
     }
 
