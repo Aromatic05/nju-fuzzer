@@ -77,9 +77,15 @@ public class FuzzerMain {
         Executor executor = new ProcessExecutor();
 
         CoverageMonitor monitor = coverage.monitor;
-        CoverageDB coverageDB = (monitor instanceof NullCoverageMonitor)
-            ? null
-            : new CoverageDB(coverage.mapSize);
+        CoverageDB coverageDB = null;
+        if (!(monitor instanceof NullCoverageMonitor)) {
+            // Prefer monitor-owned CoverageDB if available (shmex), otherwise create an engine-owned one.
+            if (monitor instanceof CoverageMonitorEx ex && ex.getCoverageDB() != null) {
+                coverageDB = ex.getCoverageDB();
+            } else {
+                coverageDB = new CoverageDB(coverage.mapSize);
+            }
+        }
 
         FuzzingEngine engine = new FuzzingEngine(
             workdir,
@@ -126,6 +132,11 @@ public class FuzzerMain {
                             ? ShmCoverageMonitor.fromEnvironment()
                             : ShmCoverageMonitorEx.fromEnvironment();
 
+                    // Enable stability confirmation by default only for the extended mode.
+                    if (monitor instanceof CoverageMonitorEx ex) {
+                        ex.setStabilityDetectionEnabled(mode.equals("shmex"));
+                    }
+
                     int mapSize = (monitor instanceof CoverageMonitorEx ex)
                             ? ex.getMapSize()
                             : SysVShmBitmapSource.DEFAULT_MAP_SIZE;
@@ -146,6 +157,11 @@ public class FuzzerMain {
                 CoverageMonitor monitor = mode.equals("shm")
                         ? ShmCoverageMonitor.create(seg.shmId(), mapSize)
                         : ShmCoverageMonitorEx.create(seg.shmId(), mapSize);
+
+                // Enable stability confirmation by default only for the extended mode.
+                if (monitor instanceof CoverageMonitorEx ex) {
+                    ex.setStabilityDetectionEnabled(mode.equals("shmex"));
+                }
 
                 Map<String, String> env = Map.of(
                         SysVShmBitmapSource.ENV_SHM_ID, String.valueOf(seg.shmId()),

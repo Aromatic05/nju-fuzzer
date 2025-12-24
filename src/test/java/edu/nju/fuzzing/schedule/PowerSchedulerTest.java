@@ -45,6 +45,30 @@ public class PowerSchedulerTest {
         Assertions.assertEquals(100, scheduler.assignEnergy(s));
     }
 
+    /** Case 2b: CoverageDB 信号 - favored 增加能量 */
+    @Test
+    public void testFavoredBoostsEnergy() {
+        Seed s = createPlainSeed();
+        s.setFavored(true);
+        Assertions.assertEquals(150, scheduler.assignEnergy(s));
+    }
+
+    /** Case 2c: CoverageDB 信号 - redundant 降低能量 */
+    @Test
+    public void testRedundantReducesEnergy() {
+        Seed s = createPlainSeed();
+        s.setRedundant(true);
+        Assertions.assertEquals(50, scheduler.assignEnergy(s));
+    }
+
+    /** Case 2d: CoverageDB 信号 - rarity 增加能量（封顶前） */
+    @Test
+    public void testRarityBoostsEnergy() {
+        Seed s = createPlainSeed();
+        s.setRarityScore(1.0);
+        Assertions.assertEquals(200, scheduler.assignEnergy(s));
+    }
+
     /** Case 3: 时间因子 - 极快 (<20ms) */
     @Test
     public void testFastExecution() {

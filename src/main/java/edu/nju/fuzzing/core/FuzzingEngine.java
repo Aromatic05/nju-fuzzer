@@ -5,11 +5,14 @@ import edu.nju.fuzzing.corpus.FileCorpusManager;
 import edu.nju.fuzzing.cov.CoverageDB;
 import edu.nju.fuzzing.cov.DiffResultEx;
 import edu.nju.fuzzing.cov.CoverageMonitor;
+import edu.nju.fuzzing.cov.CoverageMonitorEx;
+import edu.nju.fuzzing.cov.EdgeSet;
 import edu.nju.fuzzing.cov.NullCoverageMonitor;
 import edu.nju.fuzzing.exec.CommandResolver;
 import edu.nju.fuzzing.exec.Executor;
 import edu.nju.fuzzing.model.ExecResult;
 import edu.nju.fuzzing.model.ExecInput;
+import edu.nju.fuzzing.model.CoverageEx;
 import edu.nju.fuzzing.model.Seed;
 import edu.nju.fuzzing.model.TargetSpec;
 import edu.nju.fuzzing.model.Testcase;
@@ -96,7 +99,7 @@ public class FuzzingEngine {
         this.prioritizer = prioritizer;
         this.scheduler = scheduler;
         this.mutator = mutator;
-        this.coverageDB = coverageDB;
+        this.coverageDB = chooseCoverageDB(harness, coverageDB);
         this.corpusManager = corpusManager;
         this.fuzzStats = fuzzStats;
 
@@ -196,6 +199,15 @@ public class FuzzingEngine {
                 new FuzzStats(targetSpec.tid()),
                 tickIntervalMs
         );
+    }
+
+    private static CoverageDB chooseCoverageDB(ExecutorHarness harness, CoverageDB injected) {
+        if (injected != null) return injected;
+        if (harness instanceof InstrumentedExecutorHarness ih
+                && ih.getCoverageMonitor() instanceof CoverageMonitorEx ex) {
+            return ex.getCoverageDB();
+        }
+        return null;
     }
 
     private FuzzingEngine(
@@ -316,6 +328,13 @@ public class FuzzingEngine {
 
         // 3. 启动执行环境 (Attach SHM)
         harness.start();
+
+        // 3.1 如果 CoverageDB 可用：对初始队列做一次基线执行，填充 globalSeen/topRated/frequency
+        // 这样 favored/rarity/redundant 对调度才有意义。
+        if (coverageDB != null) {
+            calibrateInitialQueueSeeds(currentInputFile, execLogsDir);
+        }
+
         statusPrinter.start();
 
         long startSec = Instant.now().getEpochSecond();
@@ -449,11 +468,19 @@ public class FuzzingEngine {
             }
         }
 
+        // 2.1 稳定性确认（可选）：如果启用，则对候选输入重复执行，标记 STABLE/UNSTABLE。
+        CoverageEx.Stability stability = CoverageEx.Stability.UNKNOWN;
+        if (isStabilityConfirmationEnabled() && !result.coverage().hitEdges().isEmpty()) {
+            stability = confirmStability(tc);
+        }
+
         // A. 持久化 (Promotion)
         Path saved = corpusManager.saveToQueue(tc.getData(), result.coverage().toBasic());
         Seed newSeed = new Seed(saved.toFile(), tc);
         newSeed.setExecutionTime(result.run().execTimeNanos());
         newSeed.setBitmapSize(result.coverage().nonZeroBytes());
+        newSeed.setStability(stability);
+        newSeed.setEdges(result.coverage().hitEdges());
 
         // B. 更新统计
         fuzzStats.recordNewPath();
@@ -469,12 +496,118 @@ public class FuzzingEngine {
                     result.coverage().nonZeroBytes(),
                     result.coverage().bitmapHash()
             );
-            coverageDB.update(seedNumericId, diff, tc.getData().length, result.run().execTimeNanos());
+            CoverageDB.UpdateResult update = coverageDB.update(seedNumericId, diff, tc.getData().length, result.run().execTimeNanos());
+
+            // Sync scheduling hints onto the Seed.
+            newSeed.setFavored(update.isFavored());
+            newSeed.setRarityScore(coverageDB.calculateRarityScore(newSeed.getEdges()));
+            newSeed.setMinEdgeFrequency(coverageDB.getMinFrequency(newSeed.getEdges()));
+            newSeed.setRedundant(coverageDB.isRedundant(seedNumericId, newSeed.getEdges()));
+
+            if (update.favoredChanged()) {
+                refreshQueueSchedulingHints();
+            }
+
             fuzzStats.updateCoveredEdges(coverageDB.getTotalEdgesSeen());
         }
 
         // D. 入队
         seedQueue.addSeed(newSeed);
+    }
+
+    private void calibrateInitialQueueSeeds(Path currentInputFile, Path execLogsDir) {
+        // Only possible when we can resolve a stable numeric ID and the monitor provides edge sets.
+        for (Seed seed : seedQueue.getSeeds()) {
+            try {
+                Testcase tc = new Testcase(seed.getDataCopy(), seed, "calibrate");
+                ExecInput input = buildExecInput(targetSpec, tc, currentInputFile, execLogsDir);
+                ExecResult res = harness.execute(input);
+                if (res == null || res.coverage() == null) continue;
+
+                seed.setExecutionTime(res.run().execTimeNanos());
+                seed.setBitmapSize(res.coverage().nonZeroBytes());
+                seed.setEdges(res.coverage().hitEdges());
+
+                if (res.coverage().hitEdges().isEmpty()) continue;
+
+                long seedNumericId = getOrAssignNumericSeedId(seed);
+                DiffResultEx diff = DiffResultEx.of(
+                        res.coverage().newEdges(),
+                        res.coverage().hitEdges(),
+                        res.coverage().nonZeroBytes(),
+                        res.coverage().bitmapHash()
+                );
+
+                CoverageDB.UpdateResult update = coverageDB.update(seedNumericId, diff, seed.getData().length, res.run().execTimeNanos());
+
+                seed.setFavored(update.isFavored());
+                seed.setRarityScore(coverageDB.calculateRarityScore(seed.getEdges()));
+                seed.setMinEdgeFrequency(coverageDB.getMinFrequency(seed.getEdges()));
+                seed.setRedundant(coverageDB.isRedundant(seedNumericId, seed.getEdges()));
+
+            } catch (Exception ignored) {
+                // Calibration is best-effort; don't fail the whole fuzzing session.
+            }
+        }
+        refreshQueueSchedulingHints();
+        fuzzStats.updateCoveredEdges(coverageDB.getTotalEdgesSeen());
+    }
+
+    private void refreshQueueSchedulingHints() {
+        if (coverageDB == null) return;
+        for (Seed seed : seedQueue.getSeeds()) {
+            EdgeSet edges = seed.getEdges();
+            if (edges == null || edges.isEmpty()) continue;
+            long id = getOrAssignNumericSeedId(seed);
+            seed.setFavored(coverageDB.isFavored(id));
+            seed.setRarityScore(coverageDB.calculateRarityScore(edges));
+            seed.setMinEdgeFrequency(coverageDB.getMinFrequency(edges));
+            seed.setRedundant(coverageDB.isRedundant(id, edges));
+        }
+    }
+
+    private boolean isStabilityConfirmationEnabled() {
+        if (!(harness instanceof InstrumentedExecutorHarness ih)) return false;
+        if (!(ih.getCoverageMonitor() instanceof CoverageMonitorEx ex)) return false;
+        return ex.isStabilityDetectionEnabled();
+    }
+
+    private CoverageEx.Stability confirmStability(Testcase tc) {
+        // Minimal stability check: run the same input a few more times and compare trace signature.
+        // If it differs, mark UNSTABLE; else STABLE.
+        final int repeats = 2;
+
+        long refHash = -1L;
+        int[] refEdges = null;
+
+        for (int i = 0; i < repeats; i++) {
+            try {
+                // We reuse the same currentInputFile/outDir behavior via buildExecInput.
+                ExecInput input = buildExecInput(targetSpec, tc,
+                        workdir.resolve("tmp/inputs/.cur_input"),
+                        workdir.resolve("tmp/exec-logs"));
+                ExecResult res = harness.execute(input);
+                if (res == null || res.coverage() == null || res.coverage().hitEdges().isEmpty()) {
+                    return CoverageEx.Stability.UNKNOWN;
+                }
+
+                long h = res.coverage().bitmapHash();
+                int[] edges = res.coverage().hitEdges().toArray();
+
+                if (i == 0) {
+                    refHash = h;
+                    refEdges = edges;
+                } else {
+                    if (h != refHash || !java.util.Arrays.equals(refEdges, edges)) {
+                        return CoverageEx.Stability.UNSTABLE;
+                    }
+                }
+            } catch (Exception e) {
+                return CoverageEx.Stability.UNKNOWN;
+            }
+        }
+
+        return CoverageEx.Stability.STABLE;
     }
 
     private long getOrAssignNumericSeedId(Seed seed) {
