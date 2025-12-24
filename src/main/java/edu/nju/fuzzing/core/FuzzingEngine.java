@@ -399,6 +399,21 @@ public class FuzzingEngine {
         
         if (!interesting) return;
 
+        // 2. 全局确认：避免仅依赖局部 diff 策略造成误判
+        // 只有当 CoverageDB 认为存在“真正全局新边”时，才晋升入队。
+        if (coverageDB != null && !result.coverage().hitEdges().isEmpty()) {
+            DiffResultEx localDiff = DiffResultEx.of(
+                    result.coverage().newEdges(),
+                    result.coverage().hitEdges(),
+                    result.coverage().nonZeroBytes(),
+                    result.coverage().bitmapHash()
+            );
+            CoverageDB.UpdateResult global = coverageDB.evaluate(localDiff);
+            if (!global.isInteresting()) {
+                return;
+            }
+        }
+
         // A. 持久化 (Promotion)
         Path saved = corpusManager.saveToQueue(tc.getData(), result.coverage().toBasic());
         Seed newSeed = new Seed(saved.toFile(), tc);

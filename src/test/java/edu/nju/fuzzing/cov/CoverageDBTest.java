@@ -180,4 +180,30 @@ class CoverageDBTest {
         assertFalse(db.hasSeenEdge(1));
         assertFalse(db.hasSeenEdge(100));
     }
+
+    @Test
+    @DisplayName("evaluate detects truly-new edges without mutating state")
+    void evaluate_detectsTrulyNew_withoutMutation() {
+        // Seed 1 establishes globalSeen = {1,2}
+        EdgeSet first = EdgeSet.of(1, 2);
+        db.update(1L, DiffResultEx.of(first, first, first.size(), 1L), 10, 1_000L);
+
+        long execsBefore = db.getTotalExecs();
+        int seenBefore = db.getTotalEdgesSeen();
+
+        // Now pretend a monitor reports local newEdges={2,3}, hitEdges={1,2,3}
+        // Globally, only 3 is truly new.
+        EdgeSet hit = EdgeSet.of(1, 2, 3);
+        EdgeSet localNew = EdgeSet.of(2, 3);
+        CoverageDB.UpdateResult eval = db.evaluate(DiffResultEx.of(localNew, hit, hit.size(), 2L));
+
+        assertTrue(eval.isInteresting());
+        assertEquals(1, eval.newEdges().size());
+        assertTrue(eval.newEdges().contains(3));
+
+        // No mutation: exec counter and globalSeen must stay unchanged.
+        assertEquals(execsBefore, db.getTotalExecs());
+        assertEquals(seenBefore, db.getTotalEdgesSeen());
+        assertFalse(db.hasSeenEdge(3));
+    }
 }
