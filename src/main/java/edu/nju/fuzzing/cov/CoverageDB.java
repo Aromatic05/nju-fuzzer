@@ -193,6 +193,44 @@ public class CoverageDB {
     }
 
     /**
+     * Evaluates whether a diff contains any truly-new edges w.r.t the current globalSeen,
+     * without mutating any CoverageDB state.
+     *
+     * This is useful for "global confirmation" before promoting an input into the queue.
+     *
+     * Note: the returned UpdateResult only has meaningful {@code newEdges}.
+     * Other fields are returned as empty/default.
+     */
+    public UpdateResult evaluate(DiffResultEx diffResult) {
+        if (diffResult == null) {
+            return new UpdateResult(EdgeSet.empty(), EdgeSet.empty(), false, false);
+        }
+
+        EdgeSet hitEdges = diffResult.hitEdges();
+        if (hitEdges == null || hitEdges.isEmpty()) {
+            return new UpdateResult(EdgeSet.empty(), EdgeSet.empty(), false, false);
+        }
+
+        int[] newBuffer = new int[hitEdges.size()];
+        int newCount = 0;
+
+        synchronized (topRatedLock) {
+            for (int edge : hitEdges) {
+                if (edge < 0 || edge >= mapSize) continue;
+                if (!globalSeen.get(edge)) {
+                    newBuffer[newCount++] = edge;
+                }
+            }
+        }
+
+        EdgeSet newEdges = newCount > 0
+                ? EdgeSet.of(java.util.Arrays.copyOf(newBuffer, newCount))
+                : EdgeSet.empty();
+
+        return new UpdateResult(newEdges, EdgeSet.empty(), false, false);
+    }
+
+    /**
      * Recalculates the favored set from topRated entries.
      * Must be called with topRatedLock held.
      */
