@@ -33,6 +33,29 @@
 - `hangs`：累计 hang/timeout
 - `lastNewPathSecAgo`：距离上次发现新路径的秒数
 
+#### `coveredEdges` 的口径（重要）
+
+本项目的 `coveredEdges/covered_edges` 是 **AFL++ 风格的内部覆盖率信号**，用于画“覆盖率曲线”和辅助调度，而不是传统的“行覆盖率百分比”。
+
+- 数据来源：AFL++ 插桩目标把 edge trace 写入 SHM bitmap（默认 64KB）。
+- 本项目的 edge-level 抽象：把 **bitmap 中非零 byte 的下标** 视作“edge index”。
+- `coveredEdges` 的定义：全局累计（all-time）“见过的 edge index 数量”，等价于 `globalSeen.cardinality()`。
+
+为什么需要“累计”：
+
+- 单次执行的 bitmap 只反映“这一次跑到了哪些边”，曲线更关心“到目前为止总共覆盖了多少边”。
+- 因此覆盖率曲线通常用累计值（单调不减），便于对比不同 run/不同策略。
+
+是否需要“分桶（bucketize）”：
+
+- 画覆盖率曲线（`coveredEdges`）**不需要分桶**：只看 0/非 0 即可。
+- 分桶常用于 **hitcount 的稳定化**（AFL 的 `classify_counts` 思路），把“命中次数”的噪声压到少量档位，用于把“循环次数显著变化”等也视为 interesting。它影响的是 `interesting` 判定/评分策略，不影响 `coveredEdges` 这个“唯一边计数”的分母。
+
+与 GCOV/LCOV 的区别：
+
+- `coveredEdges` 适合机器决策与趋势曲线（快、轻量、可在线更新）。
+- 若要给人看的“行覆盖率/分支覆盖率报告”，通常是 fuzzing 后拿 `workdir/queue` 语料 **重放**到开启 `-fprofile-arcs -ftest-coverage` 的目标程序，再用 `lcov/genhtml` 生成报表（离线、慢、但可读）。
+
 #### 重要说明：兼容构造器
 
 `StatsTick` 额外提供一个**旧 9 参构造器**（不含 `totalPaths`），会把 `totalPaths` 默认填为 0，用于兼容旧测试/调用点。
