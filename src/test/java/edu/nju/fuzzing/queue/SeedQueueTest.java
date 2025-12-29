@@ -175,4 +175,44 @@ public class SeedQueueTest {
         seed.setBitmapSize(500);
         Assertions.assertEquals(500, seed.getBitmapSize());
     }
+
+    /**
+     * 测试 5: 调度提示字段持久化
+     * 验证：favored/redundant/min_edge_freq/rarity_score/stability 会写入 .meta 并在 reload 后恢复。
+     */
+    @Test
+    public void testSchedulingHintsArePersistedAndRestored() throws IOException {
+        // 1) 创建一个可识别类型的种子（触发 SeedType.detect）
+        byte[] data = "local a=1\nprint(a)".getBytes();
+        File seedFile = tempDir.resolve("hint_seed").toFile();
+        Files.write(seedFile.toPath(), data);
+
+        Seed seed = Seed.loadWithMetadata(seedFile, data);
+        seed.setFavored(true);
+        seed.setRedundant(true);
+        seed.setMinEdgeFrequency(2);
+        seed.setRarityScore(0.75);
+        seed.setStability(edu.nju.fuzzing.model.CoverageEx.Stability.UNSTABLE);
+
+        SeedQueue queue = new SeedQueue();
+        queue.addSeed(seed);
+
+        // 2) 模拟重启，重新加载
+        SeedQueue reloaded = new SeedQueue();
+        reloaded.loadInitialSeeds(tempDir);
+
+        Seed restored = reloaded.getSeeds().stream()
+                .filter(s -> s.getFile().getName().equals("hint_seed"))
+                .findFirst()
+                .orElseThrow();
+
+        Assertions.assertTrue(restored.isFavored());
+        Assertions.assertTrue(restored.isRedundant());
+        Assertions.assertEquals(2, restored.getMinEdgeFrequency());
+        Assertions.assertEquals(0.75, restored.getRarityScore(), 1e-9);
+        Assertions.assertEquals(edu.nju.fuzzing.model.CoverageEx.Stability.UNSTABLE, restored.getStability());
+
+        // 类型应当可恢复：meta 优先于自动检测
+        Assertions.assertNotEquals(edu.nju.fuzzing.model.SeedType.UNKNOWN, restored.getType());
+    }
 }
