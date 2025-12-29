@@ -2,25 +2,49 @@ package edu.nju.fuzzing.mutate;
 
 import edu.nju.fuzzing.model.Seed;
 import edu.nju.fuzzing.model.Testcase;
+import edu.nju.fuzzing.mutate.grammar.*;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
+/**
+ * 语法感知 JSON 变异器
+ * 
+ * 核心改进：
+ * 1. 使用种子内容进行变异，而非完全随机生成
+ * 2. 容错分词 -> 树构建 -> 语法感知变异 -> 序列化
+ * 3. 保留原始结构的同时进行针对性修改
+ */
 public class JsonMutator implements Mutator {
 
     private static final int MAX_DEPTH = 32;
-    private static final int WIDE_OBJECT_SIZE = 2000; // 调至2000，确保稳稳超过测试阈值1000
+    private static final int WIDE_OBJECT_SIZE = 2000;
 
     private static final String[] ATTACK_PAYLOADS = {
             "{\"a\":1, \"a\":2, \"a\":3}",
-            "[1e308, -1e308, 1.2e309]", // 包含测试点
+            "[1e308, -1e308, 1.2e309]",
             "{\"__proto__\":{}}",
             "{\"\\u0000\": 1}",
             "{\"a\": [1, 2, ",
             "{/* comment */ \"a\": 1} // comment"
     };
+
+    private static final String[] INJECTION_PAYLOADS = {
+            "\\u0000",
+            "\\x00",
+            "%s%s%s",
+            "${7*7}",
+            "{{7*7}}",
+            "../../../etc/passwd",
+            "' OR '1'='1",
+            "<script>",
+            "\\uD800",
+            "\\uDFFF"
+    };
+
+    private final JsonTokenizer tokenizer = new JsonTokenizer();
 
     @Override
     public Iterator<Testcase> mutate(Seed seed, int energy) {
@@ -37,27 +61,224 @@ public class JsonMutator implements Mutator {
                 remaining--;
 
                 ThreadLocalRandom rand = ThreadLocalRandom.current();
-                String jsonStr;
-                String desc = "JSON:Gen";
+                byte[] seedData = seed.getData();
+                String desc;
+                byte[] mutatedBytes;
 
                 int strategy = rand.nextInt(100);
-                if (strategy < 5) {
-                    jsonStr = ATTACK_PAYLOADS[rand.nextInt(ATTACK_PAYLOADS.length)];
+
+                if (strategy < 3) {
+                    // [3%] 原始攻击 Payload
+                    mutatedBytes = ATTACK_PAYLOADS[rand.nextInt(ATTACK_PAYLOADS.length)]
+                            .getBytes(StandardCharsets.UTF_8);
                     desc = "JSON:Payload";
-                } else if (strategy < 15) { // 提高到10%概率生成深度嵌套
-                    jsonStr = generateDeepNest(rand.nextBoolean(), rand);
-                    desc = "JSON:Deep";
-                } else if (strategy < 25) { // 提高到10%概率生成宽对象
-                    jsonStr = generateWideObject(rand);
+                } else if (strategy < 8) {
+                    // [5%] 深层嵌套攻击
+                    mutatedBytes = createDeepNestingFromSeed(seedData, rand);
+                    desc = "JSON:DeepNest";
+                } else if (strategy < 13) {
+                    // [5%] 宽对象攻击
+                    mutatedBytes = generateWideObject(rand).getBytes(StandardCharsets.UTF_8);
                     desc = "JSON:Wide";
+                } else if (seedData == null || seedData.length == 0) {
+                    // 种子为空，生成新内容
+                    mutatedBytes = generateValue(0, rand).getBytes(StandardCharsets.UTF_8);
+                    desc = "JSON:Gen";
                 } else {
-                    jsonStr = generateValue(0, rand);
+                    // [85%] 基于种子的语法感知变异
+                    mutatedBytes = mutateWithGrammar(seedData, rand);
+                    desc = "JSON:GrammarMut";
                 }
 
-                byte[] finalBytes = encodeWithBom(jsonStr, rand);
+                // 应用编码和 BOM
+                String content = new String(mutatedBytes, StandardCharsets.UTF_8);
+                byte[] finalBytes = encodeWithBom(content, rand);
                 return new Testcase(finalBytes, seed, "grammar:" + desc);
             }
         };
+    }
+
+    // ==========================================
+    // 核心：基于语法的变异
+    // ==========================================
+
+    private byte[] mutateWithGrammar(byte[] seedData, ThreadLocalRandom rand) {
+        // 1. 分词
+        List<Token> tokens = tokenizer.tokenize(seedData);
+        if (tokens.isEmpty()) {
+            return generateValue(0, rand).getBytes(StandardCharsets.UTF_8);
+        }
+
+        // 2. 构建树
+        TokenNode tree = tokenizer.buildTree(tokens);
+
+        // 3. 应用变异策略（随机选择 1-3 种）
+        int mutationCount = 1 + rand.nextInt(3);
+        for (int i = 0; i < mutationCount; i++) {
+            int mutationType = rand.nextInt(10);
+            
+            switch (mutationType) {
+                case 0:
+                    MutationStrategy.typeConfusion(tree, rand);
+                    break;
+                case 1:
+                    MutationStrategy.mutateNumbers(tree, rand);
+                    break;
+                case 2:
+                    MutationStrategy.injectPayload(tree, INJECTION_PAYLOADS, rand);
+                    break;
+                case 3:
+                    MutationStrategy.deleteNodes(tree, 0.1, rand);
+                    break;
+                case 4:
+                    MutationStrategy.swapNodes(tree, rand);
+                    break;
+                case 5:
+                    MutationStrategy.duplicateSubtree(tree, 1 + rand.nextInt(3), rand);
+                    break;
+                case 6:
+                    mutateStringTokens(tree, rand);
+                    break;
+                case 7:
+                    insertExtraPunctuation(tree, rand);
+                    break;
+                case 8:
+                    replaceJsonKeywords(tree, rand);
+                    break;
+                default:
+                    addRandomToken(tree, rand);
+                    break;
+            }
+        }
+
+        // 4. 序列化
+        String result;
+        if (rand.nextInt(20) == 0) {
+            result = tree.serializeWithMissingClose(rand, 0.2);
+        } else {
+            result = tree.serialize();
+        }
+
+        return result.getBytes(StandardCharsets.UTF_8);
+    }
+
+    // ==========================================
+    // JSON 特定变异操作
+    // ==========================================
+
+    private void mutateStringTokens(TokenNode tree, ThreadLocalRandom rand) {
+        List<TokenNode> leaves = tree.collectLeaves();
+        for (TokenNode leaf : leaves) {
+            if (leaf.getToken() != null && leaf.getToken().getType() == Token.Type.STRING) {
+                if (rand.nextInt(5) == 0) {
+                    String original = leaf.getToken().getValue();
+                    String mutated = mutateString(original, rand);
+                    replaceTokenValue(leaf, mutated);
+                }
+            }
+        }
+    }
+
+    private String mutateString(String original, ThreadLocalRandom rand) {
+        if (original.length() < 2) return original;
+        
+        int op = rand.nextInt(6);
+        switch (op) {
+            case 0:
+                return original.substring(1, original.length() - 1);
+            case 1:
+                char quote = original.charAt(0) == '"' ? '\'' : '"';
+                return quote + original.substring(1, original.length() - 1) + quote;
+            case 2:
+                String inner = original.substring(1, original.length() - 1);
+                String payload = INJECTION_PAYLOADS[rand.nextInt(INJECTION_PAYLOADS.length)];
+                int pos = rand.nextInt(Math.max(1, inner.length()));
+                return original.charAt(0) + inner.substring(0, pos) + payload + 
+                       inner.substring(pos) + original.charAt(original.length() - 1);
+            case 3:
+                String content = original.substring(1, original.length() - 1);
+                int repeat = 2 + rand.nextInt(10);
+                return original.charAt(0) + content.repeat(repeat) + original.charAt(original.length() - 1);
+            case 4:
+                return original.charAt(0) + "\\u0000" + original.substring(1);
+            default:
+                return original.charAt(0) + "\\q" + original.substring(1);
+        }
+    }
+
+    private void insertExtraPunctuation(TokenNode tree, ThreadLocalRandom rand) {
+        List<TokenNode> children = tree.getChildren();
+        if (children.isEmpty()) return;
+        int insertPos = rand.nextInt(children.size());
+        Token extraToken = rand.nextBoolean() 
+            ? new Token(Token.Type.COMMA, ",")
+            : new Token(Token.Type.COLON, ":");
+        tree.insertChild(insertPos, TokenNode.createLeaf(extraToken));
+    }
+
+    private void replaceJsonKeywords(TokenNode tree, ThreadLocalRandom rand) {
+        String[][] replacements = {
+            {"true", "True"}, {"true", "TRUE"},
+            {"false", "False"}, {"false", "FALSE"},
+            {"null", "Null"}, {"null", "NULL"},
+            {"null", "undefined"}, {"true", "1"}, {"false", "0"}
+        };
+        MutationStrategy.replaceKeywords(tree, replacements, rand);
+    }
+
+    private void addRandomToken(TokenNode tree, ThreadLocalRandom rand) {
+        Token newToken;
+        int type = rand.nextInt(5);
+        switch (type) {
+            case 0:
+                newToken = new Token(Token.Type.STRING, "\"fuzz" + rand.nextInt(100) + "\"");
+                break;
+            case 1:
+                newToken = new Token(Token.Type.NUMBER, String.valueOf(rand.nextInt()));
+                break;
+            case 2:
+                newToken = new Token(Token.Type.BOOLEAN, rand.nextBoolean() ? "true" : "false");
+                break;
+            case 3:
+                newToken = new Token(Token.Type.NULL, "null");
+                break;
+            default:
+                newToken = new Token(Token.Type.UNKNOWN, "NaN");
+                break;
+        }
+        
+        List<TokenNode> children = tree.getChildren();
+        if (!children.isEmpty()) {
+            int pos = rand.nextInt(children.size());
+            tree.insertChild(pos, TokenNode.createLeaf(newToken));
+        }
+    }
+
+    private void replaceTokenValue(TokenNode leaf, String newValue) {
+        Token newToken = leaf.getToken().withValue(newValue);
+        TokenNode parent = leaf.getParent();
+        if (parent != null) {
+            int idx = parent.getChildren().indexOf(leaf);
+            if (idx >= 0) {
+                parent.replaceChild(idx, TokenNode.createLeaf(newToken));
+            }
+        }
+    }
+
+    private byte[] createDeepNestingFromSeed(byte[] seedData, ThreadLocalRandom rand) {
+        if (seedData != null && seedData.length > 0) {
+            List<Token> tokens = tokenizer.tokenize(seedData);
+            TokenNode tree = tokenizer.buildTree(tokens);
+            
+            List<TokenNode> blocks = tree.collectBlocks();
+            if (!blocks.isEmpty()) {
+                TokenNode target = blocks.get(rand.nextInt(blocks.size()));
+                int depth = 50 + rand.nextInt(150);
+                MutationStrategy.duplicateSubtree(target, depth, rand);
+                return tree.serialize().getBytes(StandardCharsets.UTF_8);
+            }
+        }
+        return generateDeepNest(rand.nextBoolean(), rand).getBytes(StandardCharsets.UTF_8);
     }
 
     private String generateValue(int depth, ThreadLocalRandom rand) {
