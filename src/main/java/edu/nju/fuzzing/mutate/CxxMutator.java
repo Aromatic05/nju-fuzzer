@@ -2,42 +2,44 @@ package edu.nju.fuzzing.mutate;
 
 import edu.nju.fuzzing.model.Seed;
 import edu.nju.fuzzing.model.Testcase;
+import edu.nju.fuzzing.mutate.grammar.*;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * 增强型 C++ Mangled Name 变异器
- * 覆盖更多 Itanium C++ ABI 特性 (Operators, Ctors, Arrays, Lambdas)
- * 并增强了针对性的 Crash 模式。
+ * 语法感知 C++ Mangled Name 变异器
+ *
+ * 核心改进：
+ * 1. 使用种子内容进行变异
+ * 2. 容错分词 -> 语法感知变异 -> 序列化
+ * 3. 针对 Itanium C++ ABI 特有结构进行变异
  */
 public class CxxMutator implements Mutator {
 
-    // 扩展基础类型
     private static final String[] BASE_TYPES = {
-            "v", "w", "b", "c", "a", "h", "s", "t", // void, wchar, bool, char, s-char, u-char, short, u-short
-            "i", "j", "l", "m", "x", "y", "n", "o", // int, u-int, long, u-long, long long, u-long long, __int128...
-            "f", "d", "e", "g", "z",                // float, double, long double, float128...
-            "Da", "Dc", "Dn", "Di", "Ds"            // auto, decltype(auto), std::nullptr_t, char32_t, char16_t
+            "v", "w", "b", "c", "a", "h", "s", "t",
+            "i", "j", "l", "m", "x", "y", "n", "o",
+            "f", "d", "e", "g", "z",
+            "Da", "Dc", "Dn", "Di", "Ds"
     };
 
-    // 扩展修饰符
-    private static final String[] MODIFIERS = {"P", "R", "O", "K", "V", "r"}; // Pointer, Ref, R-Ref, Const, Volatile, Restrict
+    private static final String[] MODIFIERS = {"P", "R", "O", "K", "V", "r"};
 
-    // 操作符编码 (部分)
     private static final String[] OPERATORS = {
-            "nw", "na", "dl", "da", // new, new[], delete, delete[]
-            "ps", "ng", "ad", "de", // +, -, &, * (unary)
-            "co", "nt", "l_n",      // ~, !, ! (logic)
-            "pl", "mi", "ml", "dv", "rm", "an", "or", "eo", // +, -, *, /, %, &, |, ^
-            "aS", "pL", "mI",       // =, +=, -=
-            "eq", "ne", "lt", "gt", // ==, !=, <, >
-            "cl", "ix", "qu"        // (), [], ?
+            "nw", "na", "dl", "da",
+            "ps", "ng", "ad", "de",
+            "co", "nt",
+            "pl", "mi", "ml", "dv", "rm", "an", "or", "eo",
+            "aS", "pL", "mI",
+            "eq", "ne", "lt", "gt",
+            "cl", "ix", "qu"
     };
 
-    // 特殊替换简写 (Standard Substitutions)
     private static final String[] STD_SUBS = {"St", "Sa", "Sb", "Ss", "Si", "So", "Sd"};
+
+    private final CxxTokenizer tokenizer = new CxxTokenizer();
 
     @Override
     public Iterator<Testcase> mutate(Seed seed, int energy) {
@@ -55,70 +57,347 @@ public class CxxMutator implements Mutator {
                 if (remaining <= 0) throw new NoSuchElementException();
                 remaining--;
 
-                // 可以在这里决定是 "Generate" 还是 "Mutate Existing Seed"
-                // 目前保持 Generate 模式
-                String mangle = generateMangledName();
-                return new Testcase(
-                        mangle.getBytes(StandardCharsets.ISO_8859_1),
-                        seed,
-                        "grammar:AdvancedCXX"
-                );
+                ThreadLocalRandom rand = ThreadLocalRandom.current();
+                byte[] seedData = seed.getData();
+                byte[] mutatedBytes;
+                String desc;
+
+                int strategy = rand.nextInt(100);
+
+                if (strategy < 10) {
+                    mutatedBytes = generateAttackPayload(rand);
+                    desc = "CXX:Attack";
+                } else if (strategy < 20) {
+                    mutatedBytes = createDeepNesting(seedData, rand);
+                    desc = "CXX:DeepNest";
+                } else if (seedData == null || seedData.length == 0 || !isValidMangledName(seedData)) {
+                    mutatedBytes = generateMangledName(rand).getBytes(StandardCharsets.ISO_8859_1);
+                    desc = "CXX:Gen";
+                } else {
+                    mutatedBytes = mutateWithGrammar(seedData, rand);
+                    desc = "CXX:GrammarMut";
+                }
+
+                return new Testcase(mutatedBytes, seed, "grammar:" + desc);
             }
         };
     }
 
-    private String generateMangledName() {
-        StringBuilder sb = new StringBuilder(256);
-        ThreadLocalRandom rand = ThreadLocalRandom.current();
+    private boolean isValidMangledName(byte[] data) {
+        if (data.length < 2) return false;
+        return data[0] == '_' && data[1] == 'Z';
+    }
 
+    private byte[] mutateWithGrammar(byte[] seedData, ThreadLocalRandom rand) {
+        List<Token> tokens = tokenizer.tokenize(seedData);
+        if (tokens.isEmpty()) {
+            return generateMangledName(rand).getBytes(StandardCharsets.ISO_8859_1);
+        }
+
+        int mutationCount = 1 + rand.nextInt(3);
+        List<Token> mutatedTokens = new ArrayList<>(tokens);
+
+        for (int i = 0; i < mutationCount; i++) {
+            int mutationType = rand.nextInt(10);
+
+            switch (mutationType) {
+                case 0: mutatedTokens = mutateTypes(mutatedTokens, rand); break;
+                case 1: mutatedTokens = mutateModifiers(mutatedTokens, rand); break;
+                case 2: mutatedTokens = mutateSubstitutions(mutatedTokens, rand); break;
+                case 3: mutatedTokens = mutateLengths(mutatedTokens, rand); break;
+                case 4: mutatedTokens = mutateNames(mutatedTokens, rand); break;
+                case 5: mutatedTokens = insertTemplates(mutatedTokens, rand); break;
+                case 6: mutatedTokens = duplicateTokens(mutatedTokens, rand); break;
+                case 7: mutatedTokens = deleteTokens(mutatedTokens, rand); break;
+                case 8: mutatedTokens = swapTokens(mutatedTokens, rand); break;
+                default: mutatedTokens = corruptNestedStructure(mutatedTokens, rand); break;
+            }
+        }
+
+        StringBuilder result = new StringBuilder();
+        for (Token token : mutatedTokens) {
+            if (token.getValue() != null) {
+                result.append(token.getValue());
+            }
+        }
+
+        return result.toString().getBytes(StandardCharsets.ISO_8859_1);
+    }
+
+    private List<Token> mutateTypes(List<Token> tokens, ThreadLocalRandom rand) {
+        List<Token> result = new ArrayList<>(tokens.size());
+        for (Token token : tokens) {
+            if (token.getType() == Token.Type.CXX_TYPE && rand.nextInt(4) == 0) {
+                String newType = BASE_TYPES[rand.nextInt(BASE_TYPES.length)];
+                result.add(token.withValue(newType));
+            } else {
+                result.add(token);
+            }
+        }
+        return result;
+    }
+
+    private List<Token> mutateModifiers(List<Token> tokens, ThreadLocalRandom rand) {
+        List<Token> result = new ArrayList<>(tokens.size());
+        for (Token token : tokens) {
+            if (token.getType() == Token.Type.CXX_MODIFIER && rand.nextInt(3) == 0) {
+                String newMod = MODIFIERS[rand.nextInt(MODIFIERS.length)];
+                result.add(token.withValue(newMod));
+            } else {
+                result.add(token);
+            }
+            if (token.getType() == Token.Type.CXX_TYPE && rand.nextInt(5) == 0) {
+                String extra = MODIFIERS[rand.nextInt(MODIFIERS.length)];
+                result.add(new Token(Token.Type.CXX_MODIFIER, extra));
+            }
+        }
+        return result;
+    }
+
+    private List<Token> mutateSubstitutions(List<Token> tokens, ThreadLocalRandom rand) {
+        List<Token> result = new ArrayList<>(tokens.size());
+        for (Token token : tokens) {
+            if (token.getType() == Token.Type.CXX_SUBST && rand.nextInt(3) == 0) {
+                int subChoice = rand.nextInt(4);
+                String newSub;
+                switch (subChoice) {
+                    case 0: newSub = "S_"; break;
+                    case 1: newSub = "S" + rand.nextInt(100) + "_"; break;
+                    case 2: newSub = "S" + (rand.nextInt(10000) + 1000) + "_"; break;
+                    default: newSub = STD_SUBS[rand.nextInt(STD_SUBS.length)]; break;
+                }
+                result.add(token.withValue(newSub));
+            } else {
+                result.add(token);
+            }
+        }
+        return result;
+    }
+
+    private List<Token> mutateLengths(List<Token> tokens, ThreadLocalRandom rand) {
+        List<Token> result = new ArrayList<>(tokens.size());
+        for (Token token : tokens) {
+            if (token.getType() == Token.Type.CXX_LENGTH && rand.nextInt(3) == 0) {
+                int lengthChoice = rand.nextInt(5);
+                String newLength;
+                switch (lengthChoice) {
+                    case 0: newLength = "0"; break;
+                    case 1: newLength = String.valueOf(rand.nextInt(100)); break;
+                    case 2: newLength = "2147483647"; break;
+                    case 3: newLength = "99999999999"; break;
+                    default: newLength = "-1"; break;
+                }
+                result.add(token.withValue(newLength));
+            } else {
+                result.add(token);
+            }
+        }
+        return result;
+    }
+
+    private List<Token> mutateNames(List<Token> tokens, ThreadLocalRandom rand) {
+        List<Token> result = new ArrayList<>(tokens.size());
+        for (Token token : tokens) {
+            if (token.getType() == Token.Type.CXX_NAME && rand.nextInt(4) == 0) {
+                String original = token.getValue();
+                int mutOp = rand.nextInt(4);
+                String newName;
+                switch (mutOp) {
+                    case 0: newName = original + "AAAA"; break;
+                    case 1: newName = original.isEmpty() ? "x" : original.substring(0, Math.min(1, original.length())); break;
+                    case 2: newName = "A".repeat(100 + rand.nextInt(200)); break;
+                    default: newName = original + "\0\0"; break;
+                }
+                result.add(token.withValue(newName));
+            } else {
+                result.add(token);
+            }
+        }
+        return result;
+    }
+
+    private List<Token> insertTemplates(List<Token> tokens, ThreadLocalRandom rand) {
+        List<Token> result = new ArrayList<>(tokens);
+        int count = 1 + rand.nextInt(5);
+        for (int i = 0; i < count; i++) {
+            int pos = rand.nextInt(Math.max(1, result.size()));
+            result.add(pos, new Token(Token.Type.CXX_TEMPLATE, "I"));
+            result.add(pos + 1, new Token(Token.Type.CXX_TYPE, BASE_TYPES[rand.nextInt(BASE_TYPES.length)]));
+            if (rand.nextBoolean()) {
+                result.add(pos + 2, new Token(Token.Type.CXX_NESTED, "E"));
+            }
+        }
+        return result;
+    }
+
+    private List<Token> duplicateTokens(List<Token> tokens, ThreadLocalRandom rand) {
+        if (tokens.size() < 2) return tokens;
+        List<Token> result = new ArrayList<>(tokens);
+        int start = rand.nextInt(tokens.size());
+        int end = Math.min(start + 2 + rand.nextInt(5), tokens.size());
+        List<Token> segment = new ArrayList<>(tokens.subList(start, end));
+        int repeat = 2 + rand.nextInt(10);
+        for (int i = 0; i < repeat; i++) {
+            result.addAll(start, segment);
+        }
+        return result;
+    }
+
+    private List<Token> deleteTokens(List<Token> tokens, ThreadLocalRandom rand) {
+        List<Token> result = new ArrayList<>();
+        boolean keepPrefix = true;
+        for (Token token : tokens) {
+            if (keepPrefix && token.getType() == Token.Type.CXX_PREFIX) {
+                result.add(token);
+                keepPrefix = false;
+            } else if (rand.nextInt(8) != 0) {
+                result.add(token);
+            }
+        }
+        return result.isEmpty() ? tokens : result;
+    }
+
+    private List<Token> swapTokens(List<Token> tokens, ThreadLocalRandom rand) {
+        if (tokens.size() < 3) return tokens;
+        List<Token> result = new ArrayList<>(tokens);
+        int i = 1 + rand.nextInt(result.size() - 1);
+        int j = 1 + rand.nextInt(result.size() - 1);
+        if (i != j) {
+            Token temp = result.get(i);
+            result.set(i, result.get(j));
+            result.set(j, temp);
+        }
+        return result;
+    }
+
+    private List<Token> corruptNestedStructure(List<Token> tokens, ThreadLocalRandom rand) {
+        List<Token> result = new ArrayList<>(tokens.size());
+        int openCount = 0;
+        for (Token token : tokens) {
+            if (token.getType() == Token.Type.CXX_NESTED || token.getType() == Token.Type.CXX_TEMPLATE) {
+                if ("N".equals(token.getValue()) || "I".equals(token.getValue())) {
+                    openCount++;
+                    result.add(token);
+                    if (rand.nextInt(3) == 0) {
+                        result.add(token);
+                        openCount++;
+                    }
+                } else if ("E".equals(token.getValue())) {
+                    if (rand.nextInt(4) == 0) {
+                        continue;
+                    }
+                    openCount--;
+                    result.add(token);
+                }
+            } else {
+                result.add(token);
+            }
+        }
+        return result;
+    }
+
+    private byte[] generateAttackPayload(ThreadLocalRandom rand) {
+        StringBuilder sb = new StringBuilder("_Z");
+        int attack = rand.nextInt(5);
+
+        switch (attack) {
+            case 0:
+                sb.append(rand.nextBoolean() ? "2147483647" : "99999999999999999");
+                sb.append("func");
+                break;
+            case 1:
+                sb.append("4main");
+                int depth = 1000 + rand.nextInt(4000);
+                for (int i = 0; i < depth; i++) {
+                    if (rand.nextBoolean()) sb.append("P");
+                    else sb.append("A").append(rand.nextInt(10)).append("_");
+                }
+                sb.append("i");
+                break;
+            case 2:
+                sb.append("3foo");
+                sb.append("S");
+                if (rand.nextBoolean()) sb.append("_");
+                else sb.append(rand.nextInt(2048)).append("_");
+                break;
+            case 3:
+                sb.append("4func");
+                int templateDepth = 50 + rand.nextInt(100);
+                for (int i = 0; i < templateDepth; i++) {
+                    sb.append("I");
+                    if (i % 5 == 0) sb.append("UlT_E_");
+                    else sb.append(BASE_TYPES[rand.nextInt(BASE_TYPES.length)]);
+                }
+                int closeCount = templateDepth + (rand.nextInt(10) - 5);
+                for (int i = 0; i < Math.max(0, closeCount); i++) sb.append("E");
+                break;
+            default:
+                sb.append("N");
+                for (int i = 0; i < 100; i++) {
+                    sb.append("3ns").append(i);
+                }
+                break;
+        }
+
+        return sb.toString().getBytes(StandardCharsets.ISO_8859_1);
+    }
+
+    private byte[] createDeepNesting(byte[] seedData, ThreadLocalRandom rand) {
+        StringBuilder sb = new StringBuilder();
+        
+        if (seedData != null && seedData.length >= 2 && seedData[0] == '_' && seedData[1] == 'Z') {
+            sb.append(new String(seedData, StandardCharsets.ISO_8859_1));
+            int depth = 100 + rand.nextInt(200);
+            for (int i = 0; i < depth; i++) {
+                sb.append("P");
+            }
+            sb.append("i");
+        } else {
+            sb.append("_Z");
+            int depth = 500 + rand.nextInt(1000);
+            for (int i = 0; i < depth; i++) {
+                if (rand.nextBoolean()) sb.append("P");
+                else sb.append("A1_");
+            }
+            sb.append("i");
+        }
+
+        return sb.toString().getBytes(StandardCharsets.ISO_8859_1);
+    }
+
+    private String generateMangledName(ThreadLocalRandom rand) {
+        StringBuilder sb = new StringBuilder(256);
         sb.append("_Z");
 
         int strategy = rand.nextInt(100);
 
         if (strategy < 5) {
-            // [5%] Integer Overflow / Big Allocation
             sb.append(rand.nextBoolean() ? "2147483647" : "99999999999999999");
             sb.append("function");
-        }
-        else if (strategy < 10) {
-            // [5%] Deep Recursion (Stack Overflow)
+        } else if (strategy < 10) {
             sb.append("4main");
-            int depth = 1000 + rand.nextInt(4000);
-            // 混合使用指针和数组，增加解析难度
+            int depth = 50 + rand.nextInt(200);
             for (int i = 0; i < depth; i++) {
                 if (rand.nextBoolean()) sb.append("P");
                 else sb.append("A").append(rand.nextInt(10)).append("_");
             }
             sb.append("i");
-        }
-        else if (strategy < 20) {
-            // [10%] Circular/Invalid Substitution (Logic Bomb/OOB)
+        } else if (strategy < 20) {
             sb.append("3foo");
-            // 尝试引用自身或尚未定义的替换
-            // S_ 是第一个组件, S0_ 是第二个...
             sb.append("S");
-            if (rand.nextBoolean()) {
-                sb.append("_"); // 引用第一个组件（即 3foo），形成递归类型？
-            } else {
-                sb.append(rand.nextInt(2048)).append("_"); // 尝试越界
-            }
-        }
-        else if (strategy < 35) {
-            // [15%] Template Bomb (DoS)
+            if (rand.nextBoolean()) sb.append("_");
+            else sb.append(rand.nextInt(100)).append("_");
+        } else if (strategy < 35) {
             sb.append("4func");
-            int depth = 20 + rand.nextInt(50);
+            int depth = 10 + rand.nextInt(30);
             for (int i = 0; i < depth; i++) {
                 sb.append("I");
-                // 可以在模板参数中插入 lambda 或更复杂的类型
-                if (i % 5 == 0) sb.append("UlT_E_"); // Lambda syntax
+                if (i % 5 == 0) sb.append("UlT_E_");
                 else sb.append(randomType(rand, 0));
             }
-            // 随机闭合，测试错误处理
             int closeCount = depth + (rand.nextInt(10) - 5);
             for (int i = 0; i < Math.max(0, closeCount); i++) sb.append("E");
-        }
-        else {
-            // [65%] Valid/Semi-Valid Complex Structure
+        } else {
             generateComplexSignature(sb, rand);
         }
 
@@ -126,33 +405,22 @@ public class CxxMutator implements Mutator {
     }
 
     private void generateComplexSignature(StringBuilder sb, ThreadLocalRandom rand) {
-        // 1. Name Scope (Namespace / Class / Special)
         if (rand.nextBoolean()) {
-            // Nested Name: N...E
             sb.append("N");
-
-            // 随机插入 CV-qualifiers 在名字前 (member function const/volatile)
             if (rand.nextInt(10) < 3) sb.append(MODIFIERS[rand.nextInt(MODIFIERS.length)]);
-
-            // 可能是标准库前缀
             if (rand.nextInt(10) < 2) sb.append(STD_SUBS[rand.nextInt(STD_SUBS.length)]);
 
             int parts = 1 + rand.nextInt(4);
             for (int i = 0; i < parts; i++) {
                 if (rand.nextInt(10) < 2) {
-                    // Operator Name
                     sb.append(OPERATORS[rand.nextInt(OPERATORS.length)]);
                 } else if (rand.nextInt(10) < 2) {
-                    // Ctor/Dtor
-                    String ctor = (rand.nextBoolean() ? "C" : "D") + rand.nextInt(4); // C1, C2... D0...
+                    String ctor = (rand.nextBoolean() ? "C" : "D") + rand.nextInt(4);
                     sb.append(ctor);
                 } else {
-                    // Normal identifier
                     String part = "ns" + rand.nextInt(100);
                     sb.append(part.length()).append(part);
                 }
-
-                // 偶尔插入模板参数到名字中 (Class Template)
                 if (rand.nextBoolean()) {
                     sb.append("I");
                     sb.append(randomType(rand, 0));
@@ -161,13 +429,10 @@ public class CxxMutator implements Mutator {
             }
             sb.append("E");
         } else {
-            // Simple Function or Data
             String name = "func";
             sb.append(name.length()).append(name);
         }
 
-        // 2. Function Arguments
-        // 多数解析器在解析完名字后，期待类型列表
         int args = rand.nextInt(6);
         if (args == 0) sb.append("v");
         for (int i = 0; i < args; i++) {
@@ -183,41 +448,30 @@ public class CxxMutator implements Mutator {
         int choice = rand.nextInt(100);
 
         if (choice < 30) {
-            // Basic Type
             return BASE_TYPES[rand.nextInt(BASE_TYPES.length)];
-        }
-        else if (choice < 50) {
-            // Modifier (Pointer, Ref, etc.)
+        } else if (choice < 50) {
             return MODIFIERS[rand.nextInt(MODIFIERS.length)] + randomType(rand, depth + 1);
-        }
-        else if (choice < 65) {
-            // Array Type: A<num>_<type>
-            String dim = rand.nextBoolean() ? String.valueOf(rand.nextInt(100)) : ""; // 空维度也是合法的 A_i
+        } else if (choice < 65) {
+            String dim = rand.nextBoolean() ? String.valueOf(rand.nextInt(100)) : "";
             return "A" + dim + "_" + randomType(rand, depth + 1);
-        }
-        else if (choice < 75) {
-            // Function Pointer: P F <return> <args...> E
+        } else if (choice < 75) {
             StringBuilder fp = new StringBuilder();
             fp.append("PF");
-            fp.append(randomType(rand, depth + 1)); // return type
-            fp.append(randomType(rand, depth + 1)); // arg1
-            if (rand.nextBoolean()) fp.append(randomType(rand, depth + 1)); // arg2
+            fp.append(randomType(rand, depth + 1));
+            fp.append(randomType(rand, depth + 1));
+            if (rand.nextBoolean()) fp.append(randomType(rand, depth + 1));
             fp.append("E");
             return fp.toString();
-        }
-        else if (choice < 90) {
-            // Template: I <types...> E
+        } else if (choice < 90) {
             StringBuilder t = new StringBuilder();
             t.append("I");
             int count = 1 + rand.nextInt(3);
-            for(int i=0; i<count; i++) t.append(randomType(rand, depth + 1));
+            for (int i = 0; i < count; i++) t.append(randomType(rand, depth + 1));
             t.append("E");
             return t.toString();
-        }
-        else {
-            // Decltype / Substitution / Vendor Extended
-            if (rand.nextBoolean()) return "Dt" + randomType(rand, depth + 1) + "E"; // decltype
-            return "S" + (rand.nextBoolean() ? "_" : "0_"); // Simple substitution
+        } else {
+            if (rand.nextBoolean()) return "Dt" + randomType(rand, depth + 1) + "E";
+            return "S" + (rand.nextBoolean() ? "_" : "0_");
         }
     }
 }
