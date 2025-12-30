@@ -1,18 +1,23 @@
 package edu.nju.fuzzing.mutate;
 
-import edu.nju.fuzzing.model.Seed;
-import edu.nju.fuzzing.model.Testcase;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-
-import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import edu.nju.fuzzing.model.Seed;
+import edu.nju.fuzzing.model.Testcase;
 
 /**
  * ElfMutator 单元测试
@@ -33,13 +38,7 @@ class ElfMutatorTest {
     private static final int OFF_E_SHOFF = 40;
     private static final int OFF_E_PHNUM = 56;
     private static final int OFF_E_SHNUM = 60;
-    private static final int OFF_E_SHSTRNDX = 62;
 
-    @BeforeEach
-    void setUp() {
-        dummySeed = Seed.loadWithMetadata(new File("dummy_elf"), new byte[0]);
-        mutator = new ElfMutator();
-    }
 
     // ==========================================
     // 基础功能测试
