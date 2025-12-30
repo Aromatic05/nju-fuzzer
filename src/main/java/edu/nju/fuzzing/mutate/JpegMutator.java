@@ -2,23 +2,28 @@ package edu.nju.fuzzing.mutate;
 
 import edu.nju.fuzzing.model.Seed;
 import edu.nju.fuzzing.model.Testcase;
+import edu.nju.fuzzing.mutate.binary.*;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * 增强型 JPEG 变异器
+ * 结构感知型 JPEG 变异器
  *
- * 新增特性：
- * 1. APP1 (Exif) 伪造：构造畸形的 TIFF 结构测试 Metadata 解析器。
- * 2. Progressive JPEG (SOF2)：测试复杂的渐进式扫描重组逻辑。
- * 3. Length Spoofing：声明长度 > 实际数据，诱发 Buffer Over-read。
- * 4. Restart Interval (DRI)：测试解码状态机重置。
- * 5. Sampling Factor Attack：非法的 MCU 尺寸计算。
+ * 使用 JpegScanner 解析 seed 数据，提取 marker segment 结构，
+ * 然后通过 StructureMutator 进行有针对性的变异：
+ * 1. 长度字段变异 (Length Spoofing)
+ * 2. Segment 删除/复制/交换
+ * 3. 数据区域位翻转
+ * 4. Marker 混淆攻击
+ * 
+ * 保留生成模式作为回退
  */
 public class JpegMutator implements Mutator {
 
@@ -39,10 +44,23 @@ public class JpegMutator implements Mutator {
     private static final int[] EVIL_DIMS = {
             0, 1, 8, 10000, 32768, 65535, 65536 // 0 and 65536 are classic edges
     };
+    
+    private final JpegScanner scanner = new JpegScanner();
+    private final Random random = new Random();
 
     @Override
     public Iterator<Testcase> mutate(Seed seed, int energy) {
         int count = Math.max(1, energy);
+        byte[] seedData = seed.getData();
+        
+        // 尝试解析 seed
+        ScanResult scanResult = null;
+        if (scanner.matches(seedData)) {
+            scanResult = scanner.scan(seedData);
+        }
+        
+        final ScanResult finalScanResult = scanResult;
+        
         return new Iterator<Testcase>() {
             private int remaining = count;
 
@@ -56,12 +74,179 @@ public class JpegMutator implements Mutator {
                 if (remaining <= 0) throw new NoSuchElementException();
                 remaining--;
                 try {
-                    return new Testcase(generateJpeg(), seed, "grammar:AdvancedJPEG");
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    byte[] jpegData;
+                    
+                    // 如果成功解析了 seed，使用结构感知变异
+                    if (finalScanResult != null && finalScanResult.isValid()) {
+                        jpegData = mutateFromSeed(finalScanResult);
+                    } else {
+                        // 回退到生成模式
+                        jpegData = generateJpeg();
+                    }
+                    
+                    return new Testcase(jpegData, seed, "structure:JPEG");
+                } catch (Exception e) {
+                    try {
+                        return new Testcase(generateJpeg(), seed, "grammar:JPEG");
+                    } catch (IOException ex) {
+                        throw new RuntimeException(ex);
+                    }
                 }
             }
         };
+    }
+    
+    /**
+     * 基于解析的 seed 进行结构感知变异
+     */
+    private byte[] mutateFromSeed(ScanResult result) throws IOException {
+        byte[] data = result.getOriginalData().clone();
+        List<BinaryChunk> chunks = result.getChunks();
+        ThreadLocalRandom rand = ThreadLocalRandom.current();
+        
+        // 选择变异策略
+        int strategy = rand.nextInt(10);
+        
+        if (strategy < 3 && chunks.size() > 2) {
+            // 30%: Segment 操作 (删除、复制、交换)
+            data = mutateSegmentStructure(data, chunks, rand);
+        } else if (strategy < 6) {
+            // 30%: 长度字段变异 (Length Spoofing)
+            data = mutateLengthFields(data, chunks, rand);
+        } else if (strategy < 8) {
+            // 20%: 数据区域位翻转
+            data = mutateDataRegions(data, chunks, rand);
+        } else {
+            // 20%: Marker 混淆攻击
+            data = mutateMarkers(data, chunks, rand);
+        }
+        
+        // 确保 SOI 和 EOI 正确
+        if (rand.nextInt(10) > 1) {
+            data = ConstraintFixer.restoreJpegMagic(data);
+            data = ConstraintFixer.ensureJpegEoi(data);
+        }
+        
+        return data;
+    }
+    
+    /**
+     * Segment 结构变异：删除/复制/交换
+     */
+    private byte[] mutateSegmentStructure(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) throws IOException {
+        // 找到可变异的 segment (排除 SOI, EOI, SOS)
+        List<BinaryChunk> mutable = new ArrayList<>();
+        for (BinaryChunk chunk : chunks) {
+            String type = chunk.getChunkType();
+            if (!type.equals("SOI") && !type.equals("EOI") && !type.startsWith("SOS")) {
+                mutable.add(chunk);
+            }
+        }
+        
+        if (mutable.isEmpty()) {
+            return data;
+        }
+        
+        int op = rand.nextInt(3);
+        
+        if (op == 0 && mutable.size() > 1) {
+            // 删除一个非关键 segment
+            BinaryChunk toDelete = mutable.get(rand.nextInt(mutable.size()));
+            return StructureMutator.deleteChunk(data, toDelete);
+            
+        } else if (op == 1) {
+            // 复制一个 segment
+            BinaryChunk toDuplicate = mutable.get(rand.nextInt(mutable.size()));
+            return StructureMutator.duplicateChunk(data, toDuplicate);
+            
+        } else if (op == 2 && mutable.size() >= 2) {
+            // 交换两个 segment
+            int idx1 = rand.nextInt(mutable.size());
+            int idx2 = rand.nextInt(mutable.size());
+            while (idx2 == idx1) idx2 = rand.nextInt(mutable.size());
+            return StructureMutator.swapChunks(data, mutable.get(idx1), mutable.get(idx2));
+        }
+        
+        return data;
+    }
+    
+    /**
+     * 长度字段变异 (Length Spoofing)
+     */
+    private byte[] mutateLengthFields(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) {
+        // 找有长度字段的 segment
+        List<BinaryChunk> withLength = new ArrayList<>();
+        for (BinaryChunk chunk : chunks) {
+            for (FieldMapping field : chunk.getFields()) {
+                if (field.getType() == FieldType.LENGTH) {
+                    withLength.add(chunk);
+                    break;
+                }
+            }
+        }
+        
+        if (withLength.isEmpty()) return data;
+        
+        BinaryChunk target = withLength.get(rand.nextInt(withLength.size()));
+        
+        // 找到长度字段
+        for (FieldMapping field : target.getFields()) {
+            if (field.getType() == FieldType.LENGTH) {
+                int globalOffset = target.getStartOffset() + field.getOffset();
+                FieldMapping globalField = new FieldMapping(globalOffset, field.getLength(), 
+                        field.getType(), field.getByteOrder(), field.getName());
+                return StructureMutator.mutateLength(data, globalField, rand);
+            }
+        }
+        
+        return data;
+    }
+    
+    /**
+     * 数据区域位翻转
+     */
+    private byte[] mutateDataRegions(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) {
+        List<BinaryChunk> withData = new ArrayList<>();
+        for (BinaryChunk chunk : chunks) {
+            if (chunk.getDataLength() > 0) {
+                withData.add(chunk);
+            }
+        }
+        
+        if (withData.isEmpty()) return data;
+        
+        BinaryChunk target = withData.get(rand.nextInt(withData.size()));
+        int dataStart = target.getStartOffset() + target.getDataOffset();
+        int dataLen = target.getDataLength();
+        
+        if (dataStart + dataLen > data.length || dataLen <= 0) return data;
+        
+        return StructureMutator.bitFlipDataRegion(data, dataStart, dataLen, rand);
+    }
+    
+    /**
+     * Marker 混淆攻击
+     */
+    private byte[] mutateMarkers(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) {
+        if (chunks.size() < 2) return data;
+        
+        // 随机选择一个 segment 修改其 marker
+        BinaryChunk target = chunks.get(rand.nextInt(chunks.size()));
+        String type = target.getChunkType();
+        
+        // 跳过 SOI 和 EOI
+        if (type.equals("SOI") || type.equals("EOI")) return data;
+        
+        int markerOffset = target.getStartOffset() + 1;  // 跳过 0xFF
+        if (markerOffset >= data.length) return data;
+        
+        byte[] result = data.clone();
+        
+        // 随机改变 marker 类型
+        int newMarker = rand.nextInt(256);
+        result[markerOffset] = (byte) newMarker;
+        
+        return result;
     }
 
     private byte[] generateJpeg() throws IOException {

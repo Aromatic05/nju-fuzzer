@@ -2,6 +2,7 @@ package edu.nju.fuzzing.mutate;
 
 import edu.nju.fuzzing.model.Seed;
 import edu.nju.fuzzing.model.Testcase;
+import edu.nju.fuzzing.mutate.binary.*;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -11,6 +12,18 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
+/**
+ * 结构感知型 ELF 变异器
+ *
+ * 使用 ElfScanner 解析 seed 数据，提取 header 和 section 结构，
+ * 然后通过 StructureMutator 进行有针对性的变异：
+ * 1. Offset 字段变异 (e_phoff, e_shoff, sh_offset 等)
+ * 2. Count 字段变异 (e_phnum, e_shnum)
+ * 3. Section/Program Header 删除/复制
+ * 4. Header 位翻转
+ * 
+ * 保留生成模式作为回退
+ */
 public class ElfMutator implements Mutator {
 
     private static final byte[] ELF_MAGIC = {0x7F, 'E', 'L', 'F'};
@@ -18,11 +31,22 @@ public class ElfMutator implements Mutator {
     private static final String[] SECTION_NAMES = {
             "", ".text", ".data", ".bss", ".rodata", ".shstrtab", ".symtab", ".strtab", ".rela.text", ".init", ".fini"
     };
+    
+    private final ElfScanner scanner = new ElfScanner();
+    private final Random random = new Random();
 
     @Override
     public Iterator<Testcase> mutate(Seed seed, int energy) {
-        // [修正1] 能量即数量，不再除以 5，确保测试用例能获得足够的样本
         int count = Math.max(1, energy);
+        byte[] seedData = seed.getData();
+        
+        // 尝试解析 seed
+        ScanResult scanResult = null;
+        if (scanner.matches(seedData)) {
+            scanResult = scanner.scan(seedData);
+        }
+        
+        final ScanResult finalScanResult = scanResult;
 
         return new Iterator<Testcase>() {
             private int remaining = count;
@@ -36,9 +60,179 @@ public class ElfMutator implements Mutator {
             public Testcase next() {
                 if (remaining <= 0) throw new NoSuchElementException();
                 remaining--;
-                return new Testcase(generateElf(), seed, "grammar:AdvancedELF");
+                
+                try {
+                    byte[] elfData;
+                    
+                    // 如果成功解析了 seed，使用结构感知变异
+                    if (finalScanResult != null && finalScanResult.isValid()) {
+                        elfData = mutateFromSeed(finalScanResult);
+                    } else {
+                        // 回退到生成模式
+                        elfData = generateElf();
+                    }
+                    
+                    return new Testcase(elfData, seed, "structure:ELF");
+                } catch (Exception e) {
+                    return new Testcase(generateElf(), seed, "grammar:ELF");
+                }
             }
         };
+    }
+    
+    /**
+     * 基于解析的 seed 进行结构感知变异
+     */
+    private byte[] mutateFromSeed(ScanResult result) throws IOException {
+        byte[] data = result.getOriginalData().clone();
+        List<BinaryChunk> chunks = result.getChunks();
+        ByteOrder order = result.getByteOrder();
+        boolean is64Bit = result.is64Bit();
+        ThreadLocalRandom rand = ThreadLocalRandom.current();
+        
+        // 选择变异策略
+        int strategy = rand.nextInt(10);
+        
+        if (strategy < 3) {
+            // 30%: Offset 字段变异 (OOB 读取攻击)
+            data = mutateOffsetFields(data, chunks, order, is64Bit, rand);
+        } else if (strategy < 5) {
+            // 20%: Count 字段变异 (分配炸弹)
+            data = mutateCountFields(data, result.getGlobalFields(), order, is64Bit, rand);
+        } else if (strategy < 7 && chunks.size() > 2) {
+            // 20%: Header 删除/复制
+            data = mutateHeaderStructure(data, chunks, rand);
+        } else if (strategy < 9) {
+            // 20%: 头部位翻转
+            data = mutateHeaderBits(data, chunks, rand);
+        } else {
+            // 10%: Flags 变异
+            data = mutateFlagsFields(data, chunks, rand);
+        }
+        
+        // 确保 Magic 正确 (否则加载器直接拒绝)
+        if (rand.nextInt(10) > 1) {
+            data = ConstraintFixer.restoreElfMagic(data);
+        }
+        
+        return data;
+    }
+    
+    /**
+     * Offset 字段变异 (e_phoff, e_shoff, sh_offset, p_offset)
+     */
+    private byte[] mutateOffsetFields(byte[] data, List<BinaryChunk> chunks, 
+                                       ByteOrder order, boolean is64Bit, ThreadLocalRandom rand) {
+        // 收集所有 offset 字段
+        List<FieldMapping> offsetFields = new ArrayList<>();
+        
+        for (BinaryChunk chunk : chunks) {
+            for (FieldMapping field : chunk.getFields()) {
+                if (field.getType() == FieldType.OFFSET) {
+                    int globalOffset = chunk.getStartOffset() + field.getOffset();
+                    offsetFields.add(new FieldMapping(globalOffset, field.getLength(), 
+                            field.getType(), order, field.getName()));
+                }
+            }
+        }
+        
+        if (offsetFields.isEmpty()) return data;
+        
+        FieldMapping target = offsetFields.get(rand.nextInt(offsetFields.size()));
+        return StructureMutator.mutateOffset(data, target, rand);
+    }
+    
+    /**
+     * Count 字段变异 (e_phnum, e_shnum) - 分配炸弹攻击
+     */
+    private byte[] mutateCountFields(byte[] data, List<FieldMapping> globalFields, 
+                                      ByteOrder order, boolean is64Bit, ThreadLocalRandom rand) {
+        // 找 e_phnum 或 e_shnum
+        for (FieldMapping field : globalFields) {
+            if (field.getType() == FieldType.COUNT && rand.nextBoolean()) {
+                return StructureMutator.mutateCount(data, field, rand);
+            }
+        }
+        return data;
+    }
+    
+    /**
+     * Header 结构变异：删除/复制 program/section header
+     */
+    private byte[] mutateHeaderStructure(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) throws IOException {
+        // 找到 PHDR 或 SHDR chunks
+        List<BinaryChunk> headers = new ArrayList<>();
+        for (BinaryChunk chunk : chunks) {
+            String type = chunk.getChunkType();
+            if (type.startsWith("PHDR_") || type.startsWith("SHDR_")) {
+                // 跳过 NULL section
+                if (!type.contains("NULL")) {
+                    headers.add(chunk);
+                }
+            }
+        }
+        
+        if (headers.isEmpty()) {
+            return data;
+        }
+        
+        int op = rand.nextInt(2);
+        
+        if (op == 0 && headers.size() > 1) {
+            // 删除一个 header
+            BinaryChunk toDelete = headers.get(rand.nextInt(headers.size()));
+            return StructureMutator.deleteChunk(data, toDelete);
+        } else {
+            // 复制一个 header
+            BinaryChunk toDuplicate = headers.get(rand.nextInt(headers.size()));
+            return StructureMutator.duplicateChunk(data, toDuplicate);
+        }
+    }
+    
+    /**
+     * 头部位翻转
+     */
+    private byte[] mutateHeaderBits(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) {
+        // 找到 ELF_HEADER chunk
+        BinaryChunk elfHeader = null;
+        for (BinaryChunk chunk : chunks) {
+            if ("ELF_HEADER".equals(chunk.getChunkType())) {
+                elfHeader = chunk;
+                break;
+            }
+        }
+        
+        if (elfHeader == null) return data;
+        
+        // 对头部进行位翻转 (跳过 magic)
+        int startOffset = elfHeader.getStartOffset() + 4; // 跳过 magic
+        int headerLen = elfHeader.getTotalLength() - 4;
+        
+        if (startOffset + headerLen > data.length || headerLen <= 0) return data;
+        
+        return StructureMutator.bitFlipDataRegion(data, startOffset, headerLen, rand);
+    }
+    
+    /**
+     * Flags 字段变异
+     */
+    private byte[] mutateFlagsFields(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) {
+        List<FieldMapping> flagsFields = new ArrayList<>();
+        
+        for (BinaryChunk chunk : chunks) {
+            for (FieldMapping field : chunk.getFields()) {
+                if (field.getType() == FieldType.FLAGS) {
+                    int globalOffset = chunk.getStartOffset() + field.getOffset();
+                    flagsFields.add(new FieldMapping(globalOffset, field.getLength(), 
+                            field.getType(), field.getByteOrder(), field.getName()));
+                }
+            }
+        }
+        
+        if (flagsFields.isEmpty()) return data;
+        
+        FieldMapping target = flagsFields.get(rand.nextInt(flagsFields.size()));
+        return StructureMutator.mutateFlags(data, target, rand);
     }
 
     private byte[] generateElf() {

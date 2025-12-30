@@ -2,10 +2,13 @@ package edu.nju.fuzzing.mutate;
 
 import edu.nju.fuzzing.model.Seed;
 import edu.nju.fuzzing.model.Testcase;
+import edu.nju.fuzzing.mutate.binary.*;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
@@ -13,17 +16,23 @@ import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 
 /**
- * 增强型 PNG 变异器
+ * 结构感知型 PNG 变异器
  *
- * 新增特性：
- * 1. Palette (PLTE) 越界攻击：声明少量的调色板，使用大的索引。
- * 2. Smart Scanlines：构造符合 Filter 逻辑的像素数据，深入测试滤镜算法。
- * 3. Ancillary Chunks：注入 iCCP, tRNS, pHYs 等容易出错的块。
- * 4. CRC Fuzzing：小概率生成错误的 CRC。
+ * 使用 PngScanner 解析 seed 数据，提取 chunk 结构，
+ * 然后通过 StructureMutator 进行有针对性的变异：
+ * 1. 长度字段变异 (整数溢出)
+ * 2. Chunk 删除/复制/交换
+ * 3. 数据区域位翻转
+ * 4. CRC 破坏
+ * 
+ * 使用 ConstraintFixer 可选择性地修复 CRC 保持结构合法性
  */
 public class PngMutator implements Mutator {
 
     private static final byte[] PNG_SIGNATURE = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+    
+    private final PngScanner scanner = new PngScanner();
+    private final Random random = new Random();
 
     // 容易引发溢出的整数
     private static final int[] EVIL_INTS = {
@@ -35,6 +44,15 @@ public class PngMutator implements Mutator {
     @Override
     public Iterator<Testcase> mutate(Seed seed, int energy) {
         int count = Math.max(1, energy);
+        byte[] seedData = seed.getData();
+        
+        // 尝试解析 seed
+        ScanResult scanResult = null;
+        if (scanner.matches(seedData)) {
+            scanResult = scanner.scan(seedData);
+        }
+        
+        final ScanResult finalScanResult = scanResult;
 
         return new Iterator<Testcase>() {
             private int remaining = count;
@@ -50,13 +68,176 @@ public class PngMutator implements Mutator {
                 remaining--;
 
                 try {
-                    byte[] pngData = generatePng();
-                    return new Testcase(pngData, seed, "grammar:AdvancedPNG");
-                } catch (IOException e) {
-                    throw new RuntimeException("PNG generation failed", e);
+                    byte[] pngData;
+                    
+                    // 如果成功解析了 seed，使用结构感知变异
+                    if (finalScanResult != null && finalScanResult.isValid()) {
+                        pngData = mutateFromSeed(finalScanResult);
+                    } else {
+                        // 回退到生成模式
+                        pngData = generatePng();
+                    }
+                    
+                    return new Testcase(pngData, seed, "structure:PNG");
+                } catch (Exception e) {
+                    // 出错时回退到生成模式
+                    try {
+                        return new Testcase(generatePng(), seed, "grammar:PNG");
+                    } catch (IOException ex) {
+                        throw new RuntimeException("PNG generation failed", ex);
+                    }
                 }
             }
         };
+    }
+    
+    /**
+     * 基于解析的 seed 进行结构感知变异
+     */
+    private byte[] mutateFromSeed(ScanResult result) throws IOException {
+        byte[] data = result.getOriginalData().clone();
+        List<BinaryChunk> chunks = result.getChunks();
+        ThreadLocalRandom rand = ThreadLocalRandom.current();
+        
+        // 选择变异策略
+        int strategy = rand.nextInt(10);
+        
+        if (strategy < 3 && chunks.size() > 2) {
+            // 30%: Chunk 操作 (删除、复制、交换)
+            data = mutateChunkStructure(data, chunks, rand);
+        } else if (strategy < 6) {
+            // 30%: 长度字段变异
+            data = mutateLengthFields(data, chunks, rand);
+        } else if (strategy < 8) {
+            // 20%: 数据区域位翻转
+            data = mutateDataRegions(data, chunks, rand);
+        } else {
+            // 20%: CRC 破坏
+            data = mutateCrc(data, chunks, rand);
+        }
+        
+        // 50% 概率修复 CRC (让解析器走得更深)
+        if (rand.nextBoolean()) {
+            data = ConstraintFixer.fixAllPngCrcs(data);
+        }
+        
+        // 确保 Magic 正确 (否则解析器直接拒绝)
+        if (rand.nextInt(10) > 1) {
+            data = ConstraintFixer.restorePngMagic(data);
+        }
+        
+        return data;
+    }
+    
+    /**
+     * Chunk 结构变异：删除/复制/交换
+     */
+    private byte[] mutateChunkStructure(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) throws IOException {
+        // 找到非关键 chunk
+        List<BinaryChunk> nonCritical = new ArrayList<>();
+        for (BinaryChunk chunk : chunks) {
+            String type = chunk.getChunkType();
+            // IHDR 和 IEND 不动
+            if (!type.equals("IHDR") && !type.equals("IEND")) {
+                nonCritical.add(chunk);
+            }
+        }
+        
+        if (nonCritical.isEmpty()) {
+            return data;
+        }
+        
+        int op = rand.nextInt(3);
+        
+        if (op == 0 && nonCritical.size() > 1) {
+            // 删除一个非关键 chunk
+            BinaryChunk toDelete = nonCritical.get(rand.nextInt(nonCritical.size()));
+            return StructureMutator.deleteChunk(data, toDelete);
+            
+        } else if (op == 1) {
+            // 复制一个 chunk
+            BinaryChunk toDuplicate = nonCritical.get(rand.nextInt(nonCritical.size()));
+            return StructureMutator.duplicateChunk(data, toDuplicate);
+            
+        } else if (op == 2 && nonCritical.size() >= 2) {
+            // 交换两个 chunk
+            int idx1 = rand.nextInt(nonCritical.size());
+            int idx2 = rand.nextInt(nonCritical.size());
+            while (idx2 == idx1) idx2 = rand.nextInt(nonCritical.size());
+            return StructureMutator.swapChunks(data, nonCritical.get(idx1), nonCritical.get(idx2));
+        }
+        
+        return data;
+    }
+    
+    /**
+     * 长度字段变异
+     */
+    private byte[] mutateLengthFields(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) {
+        // PNG chunk 格式: [4字节长度][4字节类型][数据][4字节CRC]
+        // 找一个 chunk 的长度字段进行变异
+        
+        if (chunks.isEmpty()) return data;
+        
+        BinaryChunk target = chunks.get(rand.nextInt(chunks.size()));
+        int lengthOffset = target.getStartOffset();
+        
+        if (lengthOffset + 4 > data.length) return data;
+        
+        // 创建一个假的长度字段映射
+        FieldMapping lengthField = new FieldMapping(lengthOffset, 4, FieldType.LENGTH, 
+                                                     ByteOrder.BIG_ENDIAN, "chunk_length");
+        
+        return StructureMutator.mutateLength(data, lengthField, rand);
+    }
+    
+    /**
+     * 数据区域位翻转
+     */
+    private byte[] mutateDataRegions(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) {
+        // 找一个有数据的 chunk
+        List<BinaryChunk> withData = new ArrayList<>();
+        for (BinaryChunk chunk : chunks) {
+            if (chunk.getDataLength() > 0) {
+                withData.add(chunk);
+            }
+        }
+        
+        if (withData.isEmpty()) return data;
+        
+        BinaryChunk target = withData.get(rand.nextInt(withData.size()));
+        
+        // PNG chunk 数据从偏移 8 开始 (跳过长度和类型)
+        int dataStart = target.getStartOffset() + 8;
+        int dataLen = target.getDataLength();
+        
+        if (dataStart + dataLen > data.length || dataLen <= 0) return data;
+        
+        return StructureMutator.bitFlipDataRegion(data, dataStart, dataLen, rand);
+    }
+    
+    /**
+     * CRC 破坏
+     */
+    private byte[] mutateCrc(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) {
+        if (chunks.isEmpty()) return data;
+        
+        BinaryChunk target = chunks.get(rand.nextInt(chunks.size()));
+        
+        // CRC 在 chunk 末尾 4 字节
+        int crcOffset = target.getStartOffset() + target.getTotalLength() - 4;
+        
+        if (crcOffset + 4 > data.length || crcOffset < 0) return data;
+        
+        // 随机修改 CRC
+        byte[] result = data.clone();
+        for (int i = 0; i < 4; i++) {
+            if (rand.nextBoolean()) {
+                result[crcOffset + i] ^= (1 << rand.nextInt(8));
+            }
+        }
+        
+        return result;
     }
 
     private byte[] generatePng() throws IOException {
