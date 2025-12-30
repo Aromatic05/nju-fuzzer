@@ -2,21 +2,26 @@ package edu.nju.fuzzing.mutate;
 
 import edu.nju.fuzzing.model.Seed;
 import edu.nju.fuzzing.model.Testcase;
+import edu.nju.fuzzing.mutate.binary.*;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * 增强型 PCAP 变异器
+ * 结构感知型 PCAP 变异器
  *
- * 改进点：
- * 1. 协议栈感知 (Protocol-Aware): 构造真实的 Ethernet/IP/TCP 头部，深入测试 DPI 引擎。
- * 2. 混合字节序处理: PCAP 头遵循 Global Header 字节序，但 Payload 强制使用网络字节序 (Big Endian)。
- * 3. 深度逻辑漏洞: 构造 IP Total Length 与 PCAP incl_len 不一致的情况。
- * 4. 时间戳回溯攻击: 生成非单调的时间戳。
+ * 使用 PcapScanner 解析 seed 数据，提取 packet record 结构，
+ * 然后通过 StructureMutator 进行有针对性的变异：
+ * 1. 包长度字段变异 (incl_len/orig_len 不一致)
+ * 2. Packet 删除/复制/交换
+ * 3. 协议头部字段变异 (IP/TCP/UDP)
+ * 4. 时间戳攻击
+ * 
+ * 保留生成模式作为回退
  */
 public class PcapMutator implements Mutator {
 
@@ -25,10 +30,22 @@ public class PcapMutator implements Mutator {
 
     // Link Types
     private static final int DLT_EN10MB = 1; // Ethernet (大多数解析器的重点)
+    
+    private final PcapScanner scanner = new PcapScanner();
+    private final Random random = new Random();
 
     @Override
     public Iterator<Testcase> mutate(Seed seed, int energy) {
         int count = Math.max(1, energy);
+        byte[] seedData = seed.getData();
+        
+        // 尝试解析 seed
+        ScanResult scanResult = null;
+        if (scanner.matches(seedData)) {
+            scanResult = scanner.scan(seedData);
+        }
+        
+        final ScanResult finalScanResult = scanResult;
 
         return new Iterator<Testcase>() {
             private int remaining = count;
@@ -44,13 +61,211 @@ public class PcapMutator implements Mutator {
                 remaining--;
 
                 try {
-                    byte[] pcapData = generatePcap();
-                    return new Testcase(pcapData, seed, "grammar:AdvancedPCAP");
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    byte[] pcapData;
+                    
+                    // 如果成功解析了 seed，使用结构感知变异
+                    if (finalScanResult != null && finalScanResult.isValid()) {
+                        pcapData = mutateFromSeed(finalScanResult);
+                    } else {
+                        // 回退到生成模式
+                        pcapData = generatePcap();
+                    }
+                    
+                    return new Testcase(pcapData, seed, "structure:PCAP");
+                } catch (Exception e) {
+                    try {
+                        return new Testcase(generatePcap(), seed, "grammar:PCAP");
+                    } catch (IOException ex) {
+                        throw new RuntimeException(ex);
+                    }
                 }
             }
         };
+    }
+    
+    /**
+     * 基于解析的 seed 进行结构感知变异
+     */
+    private byte[] mutateFromSeed(ScanResult result) throws IOException {
+        byte[] data = result.getOriginalData().clone();
+        List<BinaryChunk> chunks = result.getChunks();
+        ByteOrder order = result.getByteOrder();
+        ThreadLocalRandom rand = ThreadLocalRandom.current();
+        
+        // 选择变异策略
+        int strategy = rand.nextInt(10);
+        
+        if (strategy < 2 && chunks.size() > 2) {
+            // 20%: Packet 操作 (删除、复制、交换)
+            data = mutatePacketStructure(data, chunks, rand);
+        } else if (strategy < 5) {
+            // 30%: 长度字段变异
+            data = mutateLengthFields(data, chunks, order, rand);
+        } else if (strategy < 7) {
+            // 20%: 协议头部变异 (IP checksum, flags)
+            data = mutateProtocolFields(data, chunks, rand);
+        } else if (strategy < 9) {
+            // 20%: 时间戳攻击
+            data = mutateTimestamps(data, chunks, order, rand);
+        } else {
+            // 10%: 数据区域位翻转
+            data = mutateDataRegions(data, chunks, rand);
+        }
+        
+        // 确保 Magic 正确
+        if (rand.nextInt(10) > 1) {
+            data = ConstraintFixer.restorePcapMagic(data);
+        }
+        
+        return data;
+    }
+    
+    /**
+     * Packet 结构变异：删除/复制/交换
+     */
+    private byte[] mutatePacketStructure(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) throws IOException {
+        // 找到 packet chunks (排除 GLOBAL_HEADER)
+        List<BinaryChunk> packets = new ArrayList<>();
+        for (BinaryChunk chunk : chunks) {
+            if (chunk.getChunkType().startsWith("PACKET_")) {
+                packets.add(chunk);
+            }
+        }
+        
+        if (packets.isEmpty()) {
+            return data;
+        }
+        
+        int op = rand.nextInt(3);
+        
+        if (op == 0 && packets.size() > 1) {
+            // 删除一个 packet
+            BinaryChunk toDelete = packets.get(rand.nextInt(packets.size()));
+            return StructureMutator.deleteChunk(data, toDelete);
+            
+        } else if (op == 1) {
+            // 复制一个 packet
+            BinaryChunk toDuplicate = packets.get(rand.nextInt(packets.size()));
+            return StructureMutator.duplicateChunk(data, toDuplicate);
+            
+        } else if (op == 2 && packets.size() >= 2) {
+            // 交换两个 packet
+            int idx1 = rand.nextInt(packets.size());
+            int idx2 = rand.nextInt(packets.size());
+            while (idx2 == idx1) idx2 = rand.nextInt(packets.size());
+            return StructureMutator.swapChunks(data, packets.get(idx1), packets.get(idx2));
+        }
+        
+        return data;
+    }
+    
+    /**
+     * 长度字段变异 (incl_len / orig_len 不一致)
+     */
+    private byte[] mutateLengthFields(byte[] data, List<BinaryChunk> chunks, ByteOrder order, ThreadLocalRandom rand) {
+        // 找有 incl_len 或 ip_total_length 字段的 chunk
+        List<FieldMapping> lengthFields = new ArrayList<>();
+        
+        for (BinaryChunk chunk : chunks) {
+            for (FieldMapping field : chunk.getFields()) {
+                if (field.getType() == FieldType.LENGTH) {
+                    // 转换为全局偏移
+                    int globalOffset = chunk.getStartOffset() + field.getOffset();
+                    lengthFields.add(new FieldMapping(globalOffset, field.getLength(), 
+                            field.getType(), field.getByteOrder(), field.getName()));
+                }
+            }
+        }
+        
+        if (lengthFields.isEmpty()) return data;
+        
+        FieldMapping target = lengthFields.get(rand.nextInt(lengthFields.size()));
+        return StructureMutator.mutateLength(data, target, rand);
+    }
+    
+    /**
+     * 协议头部字段变异 (IP checksum, flags)
+     */
+    private byte[] mutateProtocolFields(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) {
+        // 找到协议相关字段
+        List<FieldMapping> protoFields = new ArrayList<>();
+        
+        for (BinaryChunk chunk : chunks) {
+            for (FieldMapping field : chunk.getFields()) {
+                String name = field.getName();
+                if (name != null && (name.contains("checksum") || name.contains("flags") || 
+                                     name.contains("protocol") || name.contains("port"))) {
+                    int globalOffset = chunk.getStartOffset() + field.getOffset();
+                    protoFields.add(new FieldMapping(globalOffset, field.getLength(), 
+                            field.getType(), field.getByteOrder(), field.getName()));
+                }
+            }
+        }
+        
+        if (protoFields.isEmpty()) return data;
+        
+        byte[] result = data.clone();
+        FieldMapping target = protoFields.get(rand.nextInt(protoFields.size()));
+        
+        // 随机修改字段值
+        for (int i = 0; i < target.getLength() && target.getOffset() + i < result.length; i++) {
+            if (rand.nextBoolean()) {
+                result[target.getOffset() + i] ^= (1 << rand.nextInt(8));
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 时间戳攻击 (非单调/极端值)
+     */
+    private byte[] mutateTimestamps(byte[] data, List<BinaryChunk> chunks, ByteOrder order, ThreadLocalRandom rand) {
+        byte[] result = data.clone();
+        
+        for (BinaryChunk chunk : chunks) {
+            if (chunk.getChunkType().startsWith("PACKET_")) {
+                // 找到 ts_sec 字段
+                for (FieldMapping field : chunk.getFields()) {
+                    if ("ts_sec".equals(field.getName()) && rand.nextBoolean()) {
+                        int globalOffset = chunk.getStartOffset() + field.getOffset();
+                        
+                        // 写入极端时间戳
+                        int evilTs = rand.nextBoolean() ? 0 : Integer.MAX_VALUE;
+                        ByteBuffer bb = ByteBuffer.wrap(result);
+                        bb.order(order);
+                        if (globalOffset + 4 <= result.length) {
+                            bb.putInt(globalOffset, evilTs);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 数据区域位翻转
+     */
+    private byte[] mutateDataRegions(byte[] data, List<BinaryChunk> chunks, ThreadLocalRandom rand) {
+        List<BinaryChunk> withData = new ArrayList<>();
+        for (BinaryChunk chunk : chunks) {
+            if (chunk.getDataLength() > 0 && chunk.getChunkType().startsWith("PACKET_")) {
+                withData.add(chunk);
+            }
+        }
+        
+        if (withData.isEmpty()) return data;
+        
+        BinaryChunk target = withData.get(rand.nextInt(withData.size()));
+        int dataStart = target.getStartOffset() + target.getDataOffset();
+        int dataLen = target.getDataLength();
+        
+        if (dataStart + dataLen > data.length || dataLen <= 0) return data;
+        
+        return StructureMutator.bitFlipDataRegion(data, dataStart, dataLen, rand);
     }
 
     private byte[] generatePcap() throws IOException {
