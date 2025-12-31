@@ -8,6 +8,8 @@ fi
 
 PROG="$1"
 
+CURVE_BUCKET_SEC=2
+
 # 根据程序名映射到对应的种子文件夹ID
 case "$PROG" in
     "c++filt") ID="01" ;;
@@ -27,9 +29,10 @@ case "$PROG" in
         ;;
 esac
 
-WORKDIR="./workdir/$PROG"
+RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
+WORKDIR="./workdir/$PROG/$RUN_ID"
 # 修改种子目录路径：使用映射出来的 ID
-SEEDS_DIR="./env/seed/$ID"
+SEEDS_DIR="./env/seeds/$ID"
 # 待测程序命令路径保持不变（通常还是用程序名）
 CMD="./env/out/$PROG @@"
 
@@ -38,5 +41,6 @@ echo "Seed Directory: $SEEDS_DIR"
 
 # 执行 Maven 命令
 mvn -q -DskipTests exec:java \
+    -Dnju.fuzzer.curveBucketSec=$CURVE_BUCKET_SEC \
   -Dexec.mainClass=edu.nju.fuzzing.cli.FuzzerMain \
-  -Dexec.args="--workdir $WORKDIR --seeds $SEEDS_DIR --duration 3600 --timeout 500 --tid $PROG --coverage shmex --cmd \"$CMD\""
+    -Dexec.args="--workdir $WORKDIR --seeds $SEEDS_DIR --duration 3600 --timeout 500 --tid $PROG --coverage shmex --cmd \"$CMD\""
