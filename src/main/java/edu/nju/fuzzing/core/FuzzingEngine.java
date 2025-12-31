@@ -15,6 +15,7 @@ import edu.nju.fuzzing.model.ExecResult;
 import edu.nju.fuzzing.model.ExecInput;
 import edu.nju.fuzzing.model.CoverageEx;
 import edu.nju.fuzzing.model.Seed;
+import edu.nju.fuzzing.model.StatsTick;
 import edu.nju.fuzzing.model.TargetSpec;
 import edu.nju.fuzzing.model.Testcase;
 import edu.nju.fuzzing.mutate.Mutator;
@@ -25,6 +26,7 @@ import edu.nju.fuzzing.schedule.SeedPrioritizer;
 import edu.nju.fuzzing.stats.FuzzStats;
 import edu.nju.fuzzing.stats.StatusPrinter;
 import edu.nju.fuzzing.stats.StatsWriter;
+import edu.nju.fuzzing.stats.StatsCurveWriter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -347,7 +349,18 @@ public class FuzzingEngine {
     public void run() throws Exception {
         // 1. 准备环境
         Path statsFile = workdir.resolve("stats/stats.csv");
+        Path curveFile = workdir.resolve("stats/curve.csv");
         Files.createDirectories(statsFile.getParent());
+
+        long curveBucketSec = 1;
+        try {
+            String v = System.getProperty("nju.fuzzer.curveBucketSec");
+            if (v != null && !v.isBlank()) {
+                curveBucketSec = Long.parseLong(v.trim());
+            }
+        } catch (NumberFormatException ignored) {
+            curveBucketSec = 1;
+        }
 
         Path tmpInputsDir = workdir.resolve("tmp/inputs");
         Path execLogsDir = workdir.resolve("tmp/exec-logs");
@@ -384,7 +397,8 @@ public class FuzzingEngine {
 
         long startSec = Instant.now().getEpochSecond();
 
-        try (StatsWriter writer = new StatsWriter(statsFile)) {
+           try (StatsWriter writer = new StatsWriter(statsFile);
+               StatsCurveWriter curveWriter = new StatsCurveWriter(curveFile, curveBucketSec)) {
             long lastTickAt = System.currentTimeMillis();
             
             // --- 主循环 (Fuzzing Loop) ---
@@ -429,7 +443,9 @@ public class FuzzingEngine {
                     // Periodic stats tick (for tests + monitoring)
                     long nowMs = System.currentTimeMillis();
                     if (tickIntervalMs == 0 || nowMs - lastTickAt >= tickIntervalMs) {
-                        writer.tick(fuzzStats.toStatsTick(seedQueue.size()));
+                        StatsTick tick = fuzzStats.toStatsTick(seedQueue.size());
+                        writer.tick(tick);
+                        curveWriter.tick(tick);
                         lastTickAt = nowMs;
                     }
 
@@ -463,7 +479,9 @@ public class FuzzingEngine {
                 parentSeed.decreaseHandicap();
                 
                 // Ensure at least one tick per outer loop
-                writer.tick(fuzzStats.toStatsTick(seedQueue.size()));
+                StatsTick tick = fuzzStats.toStatsTick(seedQueue.size());
+                writer.tick(tick);
+                curveWriter.tick(tick);
             }
 
         } finally {
