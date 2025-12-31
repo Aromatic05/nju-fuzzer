@@ -362,11 +362,18 @@ public class FuzzingEngine {
             curveBucketSec = 1;
         }
 
-        Path tmpInputsDir = workdir.resolve("tmp/inputs");
-        Path execLogsDir = workdir.resolve("tmp/exec-logs");
-        Files.createDirectories(tmpInputsDir);
         String execLogsMode = System.getProperty("nju.fuzzer.execLogs", "all");
-        if (execLogsMode == null || execLogsMode.isBlank() || execLogsMode.trim().equalsIgnoreCase("all")) {
+        String execLogsModeNorm = (execLogsMode == null) ? "all" : execLogsMode.trim().toLowerCase();
+
+        String tmpInputsRootRaw = System.getProperty("nju.fuzzer.tmpInputsDir", "");
+        Path tmpInputsDir = (tmpInputsRootRaw == null || tmpInputsRootRaw.isBlank())
+                ? workdir.resolve("tmp/inputs")
+                : Path.of(tmpInputsRootRaw.trim());
+
+        Path execLogsDir = workdir.resolve("tmp/exec-logs");
+
+        Files.createDirectories(tmpInputsDir);
+        if (execLogsModeNorm.equals("all")) {
             Files.createDirectories(execLogsDir);
         }
 
@@ -464,7 +471,7 @@ public class FuzzingEngine {
                     }
 
                     // G. 评估与晋升 (Evaluation & Promotion)
-                    handleNormalExecution(tc, result, parentSeed);
+                    handleNormalExecution(tc, result, parentSeed, currentInputFile, execLogsDir, execLogsModeNorm);
 
                     if (tickIntervalMs > 0) {
                         try {
@@ -509,7 +516,14 @@ public class FuzzingEngine {
         statusPrinter.printHang(fuzzStats.getHangs(), result.run().execTimeMs());
     }
 
-    private void handleNormalExecution(Testcase tc, ExecResult result, Seed parentSeed) {
+        private void handleNormalExecution(
+            Testcase tc,
+            ExecResult result,
+            Seed parentSeed,
+            Path currentInputFile,
+            Path execLogsDir,
+            String execLogsModeNorm
+        ) {
         // 1. 快速检查：本次执行是否发现了新边 (Local diff)
         // Harness 返回的 CoverageEx 已经包含了基于 Monitor 视角的 newEdges
         boolean interesting = result.coverage().interesting();
@@ -537,7 +551,20 @@ public class FuzzingEngine {
         // 2.1 稳定性确认（可选）：如果启用，则对候选输入重复执行，标记 STABLE/UNSTABLE。
         CoverageEx.Stability stability = CoverageEx.Stability.UNKNOWN;
         if (isStabilityConfirmationEnabled() && !result.coverage().hitEdges().isEmpty()) {
-            stability = confirmStability(tc);
+            stability = confirmStability(tc, currentInputFile, execLogsDir);
+        }
+
+        // Optional: only keep stdout/stderr logs for promoted (interesting) inputs.
+        if ("interesting".equals(execLogsModeNorm)) {
+            try {
+                Files.createDirectories(execLogsDir);
+                withSystemProperty("nju.fuzzer.execLogs", "all", () -> {
+                    ExecInput logInput = buildExecInput(targetSpec, tc, currentInputFile, execLogsDir);
+                    harness.execute(logInput);
+                });
+            } catch (Exception ignored) {
+                // Best-effort: logging must not block promotion.
+            }
         }
 
         // A. 持久化 (Promotion)
@@ -638,7 +665,7 @@ public class FuzzingEngine {
         return ex.isStabilityDetectionEnabled();
     }
 
-    private CoverageEx.Stability confirmStability(Testcase tc) {
+    private CoverageEx.Stability confirmStability(Testcase tc, Path currentInputFile, Path execLogsDir) {
         // Minimal stability check: run the same input a few more times and compare trace signature.
         // If it differs, mark UNSTABLE; else STABLE.
         final int repeats = 2;
@@ -649,9 +676,7 @@ public class FuzzingEngine {
         for (int i = 0; i < repeats; i++) {
             try {
                 // We reuse the same currentInputFile/outDir behavior via buildExecInput.
-                ExecInput input = buildExecInput(targetSpec, tc,
-                        workdir.resolve("tmp/inputs/.cur_input"),
-                        workdir.resolve("tmp/exec-logs"));
+                ExecInput input = buildExecInput(targetSpec, tc, currentInputFile, execLogsDir);
                 ExecResult res = harness.execute(input);
                 if (res == null || res.coverage() == null || res.coverage().hitEdges().isEmpty()) {
                     return CoverageEx.Stability.UNKNOWN;
@@ -676,6 +701,29 @@ public class FuzzingEngine {
         return CoverageEx.Stability.STABLE;
     }
 
+    private static void withSystemProperty(String key, String value, ThrowingRunnable action) throws Exception {
+        String prev = System.getProperty(key);
+        if (value == null) {
+            System.clearProperty(key);
+        } else {
+            System.setProperty(key, value);
+        }
+        try {
+            action.run();
+        } finally {
+            if (prev == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, prev);
+            }
+        }
+    }
+
+    @FunctionalInterface
+    private interface ThrowingRunnable {
+        void run() throws Exception;
+    }
+
     private long getOrAssignNumericSeedId(Seed seed) {
         String id = seed.getId();
         Long existing = numericSeedIds.get(id);
@@ -696,16 +744,26 @@ public class FuzzingEngine {
 
         boolean usesFile = spec.argvTemplate().stream().anyMatch("@@"::equals);
 
-        // Overwrite a fixed file each time to avoid inode/disk explosion.
-        if (currentInputFile == null) {
-            throw new IllegalArgumentException("currentInputFile is null");
+        boolean persistTmpInputs = true;
+        String rawPersist = System.getProperty("nju.fuzzer.persistTmpInputs", "true");
+        if (rawPersist != null && !rawPersist.isBlank()) {
+            persistTmpInputs = !rawPersist.trim().equalsIgnoreCase("false");
         }
-        Files.write(
-            currentInputFile,
-            tc.getData(),
-            StandardOpenOption.CREATE,
-            StandardOpenOption.TRUNCATE_EXISTING
-        );
+
+        // Overwrite a fixed file each time to avoid inode explosion.
+        // For FILE mode (@@), this is required.
+        // For STDIN mode, this is optional and can be disabled.
+        if (usesFile || persistTmpInputs) {
+            if (currentInputFile == null) {
+                throw new IllegalArgumentException("currentInputFile is null");
+            }
+            Files.write(
+                    currentInputFile,
+                    tc.getData(),
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING
+            );
+        }
 
         Path inputFile = usesFile ? currentInputFile : null;
         byte[] stdinData = usesFile ? null : tc.getData();

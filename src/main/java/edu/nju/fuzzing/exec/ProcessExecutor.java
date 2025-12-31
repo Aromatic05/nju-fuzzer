@@ -20,6 +20,7 @@ public class ProcessExecutor implements Executor {
 
     private enum ExecLogMode {
         ALL,
+        INTERESTING,
         NONE
     }
 
@@ -28,6 +29,7 @@ public class ProcessExecutor implements Executor {
         if (raw == null) return ExecLogMode.ALL;
         String v = raw.trim().toLowerCase();
         return switch (v) {
+            case "interesting" -> ExecLogMode.INTERESTING;
             case "none", "off", "disable", "disabled", "0", "false" -> ExecLogMode.NONE;
             default -> ExecLogMode.ALL;
         };
