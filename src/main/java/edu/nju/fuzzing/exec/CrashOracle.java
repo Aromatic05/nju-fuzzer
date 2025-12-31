@@ -8,12 +8,23 @@ import java.util.Set;
 /**
  * Crash classification policy.
  *
- * <p>By default, this project historically treated any non-zero exit code as a crash.
- * Some real-world targets (e.g., parsers like xmllint) use non-zero exit codes to
- * signal "input rejected" rather than a memory-safety crash. This oracle allows
- * configuring a whitelist of exit codes that should NOT be treated as crashes.
+ * <p>By default, this oracle treats "signal-like" abnormal exits as crashes, using the
+ * conventional shell encoding: {@code exitCode = 128 + signal}. In practice, this means
+ * {@code exitCode > 128} is classified as a crash (e.g. 139=SIGSEGV).
+ *
+ * <p>Many real-world targets (e.g., parsers like xmllint) use non-zero exit codes below
+ * this threshold to signal "input rejected" rather than a memory-safety crash.
+ *
+ * <p>To keep behavior configurable, the oracle also supports a whitelist of exit codes
+ * that should NOT be treated as crashes.
  */
 public final class CrashOracle {
+
+    /**
+     * Conventional threshold used by shells to encode signal termination as 128 + signal.
+     * Exit codes above this value typically indicate an unhandled signal (e.g. 139=SIGSEGV).
+     */
+    public static final int SIGNAL_EXIT_CODE_BASE = 128;
 
     /**
      * Conventional shell exit codes for interrupt/termination:
@@ -31,8 +42,7 @@ public final class CrashOracle {
     }
 
     /**
-     * Default oracle: preserves historical behavior except it ignores conventional
-     * interrupt exit codes (130/143).
+     * Default oracle: ignores conventional interrupt exit codes (130/143).
      */
     public static CrashOracle defaultOracle() {
         return new CrashOracle(DEFAULT_NON_CRASH_EXIT_CODES);
@@ -70,6 +80,13 @@ public final class CrashOracle {
         }
 
         int exitCode = run.exitCode();
-        return !nonCrashExitCodes.contains(exitCode);
+        // Default policy: only treat signal-like exits (128 + signal) as crashes.
+        // Keep a whitelist to avoid false positives for common interrupts (e.g. 130/143)
+        // and for any target-specific exceptions.
+        if (nonCrashExitCodes.contains(exitCode)) {
+            return false;
+        }
+
+        return exitCode > SIGNAL_EXIT_CODE_BASE;
     }
 }
