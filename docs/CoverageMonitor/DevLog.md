@@ -190,3 +190,28 @@ engine.run(); // 自动处理覆盖率监控、corpus 保存、统计输出
 
 **最后更新**: 2025年12月22日  
 **版本**: v1.1 - Extended Coverage Monitoring for Seed Scheduling
+
+---
+
+## ✅ Iteration 5: 长跑 IO 与统计落盘优化（2025-12-31）
+
+虽然本次改动主要位于 Engine/Executor/Stats，但它直接改善了 CoverageMonitor（SHM fuzzing）长跑体验：
+
+- stdout/stderr 默认不再全量落盘，避免 `workdir/tmp` 小文件爆炸
+  - 默认策略：`-Dnju.fuzzer.execLogs=interesting`
+  - 仅当输入被确认“晋升为 interesting 并入队”时，进行一次 best-effort 二次执行抓 stdout/stderr
+  - 且仅在输出非空时写 `tmp/exec-logs/stdout_*.log` / `stderr_*.log`
+  - `-Dnju.fuzzer.execLogsMaxBytes=<bytes>` 限制捕获上限（默认 1MB）
+
+- FILE 模式复用 `.cur_input` 的同时，默认强制 tmpfs（/dev/shm）避免磁盘落盘
+  - `-Dnju.fuzzer.requireTmpfsInputs=true`（默认 true）
+  - tmpfs 不可用时 fail-fast（不再回退到 workdir/tmp）
+
+- stats/curve CSV 写入改为批量 flush，降低 IO
+  - `-Dnju.fuzzer.statsFlushEvery=<N>`（默认 100；<=0 表示仅 close 时 flush）
+
+相关模块文档：
+
+- `docs/Engine/FuzzingEngine.md`
+- `docs/stats/stats.md`
+- `docs/ExecutorHarness/Executor.md`

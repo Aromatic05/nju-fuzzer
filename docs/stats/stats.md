@@ -8,6 +8,10 @@
 2. **展示（StatusPrinter）**：周期性在控制台打印单行状态 + 事件提示。
 3. **落盘（StatsWriter）**：以 CSV 形式把 `StatsTick` 快照追加写入 `workdir/stats/stats.csv`，供离线分析。
 
+同时，为了画“增长曲线”，引入了第四个落盘组件：
+
+4. **曲线（StatsCurveWriter）**：按时间分桶把覆盖/paths/exec/crash/hang 的累计值与桶内增量写入 `workdir/stats/curve.csv`。
+
 本模块的设计目标是：主循环只负责调用 `recordXXX()`，其余展示/落盘细节解耦。
 
 ---
@@ -112,6 +116,33 @@ elapsedSec,targetName,execsTotal,coveredEdges,execsPerSec,queueSize,totalPaths,c
 ```
 
 > 说明：本实现的 `timestamp` 实际写入的是 `elapsedSec`（相对时间秒数），便于不同运行复现/对齐。
+
+#### Flush 策略（减少长跑 IO）
+
+默认不会每行都 `flush()`，而是按批次 flush：
+
+- `-Dnju.fuzzer.statsFlushEvery=<N>`：每写 N 行 flush 一次（默认 100；<=0 表示只在 close 时 flush）。
+
+这能显著减少频繁 flush 带来的 IO 与 CPU 开销；代价是进程异常退出时，最后一小段数据可能尚未落盘。
+
+---
+
+### 5) StatsCurveWriter（覆盖增长曲线）
+
+- 位置：`edu.nju.fuzzing.stats.StatsCurveWriter`
+- 输出：`workdir/stats/curve.csv`
+- 分桶：`-Dnju.fuzzer.curveBucketSec=<sec>`（默认 1 秒）
+
+表头（当前实现）：
+
+```
+timestamp,target_name,covered_edges,total_paths,new_edges,new_paths,exec_count,new_execs,crash_count,new_crashes,hang_count,new_hangs
+```
+
+说明：
+
+- `timestamp` 为 bucket 的起始秒（相对运行开始的 elapsedSec）
+- `new_*` 为“桶内增量”（相邻 bucket 的差值，负值会按 0 处理）
 
 ---
 

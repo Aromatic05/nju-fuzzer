@@ -20,6 +20,8 @@ class ProcessExecutorTest {
 
     @Test
     void run_fileMode_catFile_shouldEchoFileToStdout() throws Exception {
+        String oldExecLogs = System.getProperty("nju.fuzzer.execLogs");
+        System.setProperty("nju.fuzzer.execLogs", "all");
         // Arrange
         Path input = tempDir.resolve("input.txt");
         byte[] payload = "hello-file\n".getBytes(StandardCharsets.UTF_8);
@@ -36,7 +38,16 @@ class ProcessExecutorTest {
         Path outDir = tempDir.resolve("out-file");
 
         // Act
-        RunResult rr = executor.run(cmd, null, Duration.ofSeconds(1), outDir);
+        RunResult rr;
+        try {
+            rr = executor.run(cmd, null, Duration.ofSeconds(1), outDir);
+        } finally {
+            if (oldExecLogs == null) {
+                System.clearProperty("nju.fuzzer.execLogs");
+            } else {
+                System.setProperty("nju.fuzzer.execLogs", oldExecLogs);
+            }
+        }
 
         // Assert
         assertFalse(rr.timedOut());
@@ -46,11 +57,16 @@ class ProcessExecutorTest {
         byte[] stdout = Files.readAllBytes(rr.stdoutFile());
         assertArrayEquals(payload, stdout);
 
-        assertTrue(Files.exists(rr.stderrFile()));
+        // stderr is usually empty for /bin/cat; we no longer persist empty log files.
+        if (rr.stderrFile() != null) {
+            assertTrue(Files.exists(rr.stderrFile()));
+        }
     }
 
     @Test
     void run_stdinMode_cat_shouldEchoStdinToStdout() throws Exception {
+        String oldExecLogs = System.getProperty("nju.fuzzer.execLogs");
+        System.setProperty("nju.fuzzer.execLogs", "all");
         // Arrange
         byte[] payload = "hello-stdin\n".getBytes(StandardCharsets.UTF_8);
 
@@ -65,7 +81,16 @@ class ProcessExecutorTest {
         Path outDir = tempDir.resolve("out-stdin");
 
         // Act
-        RunResult rr = executor.run(cmd, payload, Duration.ofSeconds(1), outDir);
+        RunResult rr;
+        try {
+            rr = executor.run(cmd, payload, Duration.ofSeconds(1), outDir);
+        } finally {
+            if (oldExecLogs == null) {
+                System.clearProperty("nju.fuzzer.execLogs");
+            } else {
+                System.setProperty("nju.fuzzer.execLogs", oldExecLogs);
+            }
+        }
 
         // Assert
         assertFalse(rr.timedOut());

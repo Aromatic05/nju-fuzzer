@@ -52,9 +52,9 @@ FILE 模式（argv 中包含 `@@`，将输入写入固定文件并把路径替�
 
 Crash 判定口径：
 
-- 默认情况下：`exitCode != 0` 会被认为是 crash（历史行为）。
-- 如果提供了 `--nonCrashExitCodes`，则这些退出码不会触发 crash 分支（不会落盘到 `crashes/`、不会计入 crash_count），而是按“非 crash 的正常执行结果”继续走覆盖率评估/晋升逻辑。
-- 为避免手动中断污染统计，`130`（SIGINT）与 `143`（SIGTERM）会被默认视为 non-crash（可与 `--nonCrashExitCodes` 合并）。
+- 默认情况下：使用 `CrashOracle` 的 shell 约定规则：`exitCode > 128` 视为 crash（通常是 `128 + signal`，如 `139=SIGSEGV`）。
+- `130`（SIGINT）与 `143`（SIGTERM）默认视为 non-crash（避免手动中断污染 crash 统计）。
+- 如果提供了 `--nonCrashExitCodes`，这些退出码会被额外视为 non-crash（不会落盘到 `crashes/`、不会计入 crash_count），而是继续走覆盖率评估/晋升逻辑。
 
 已知限制：
 
@@ -116,8 +116,13 @@ Crash 判定口径：
 - `workdir/crashes`：崩溃输入
 - `workdir/hangs`：超时输入
 - `workdir/stats/stats.csv`：统计输出
-- `workdir/tmp/inputs/.cur_input`：复用输入文件（避免小文件爆炸）
-- `workdir/tmp/exec-logs/`：stdout/stderr 日志（当前实现每次 exec 都会写文件；长跑注意 inode 风险）
+- `workdir/tmp/exec-logs/`：stdout/stderr 日志（默认只在 *晋升为 interesting* 时才会保存，且仅保存非空输出）
+
+关于临时输入（`.cur_input`）：
+
+- FILE 模式（`--cmd` 含 `@@`）必须使用输入文件；引擎会复用单个 `.cur_input`，避免 inode 爆炸。
+- 默认情况下 `.cur_input` **不会写到 workdir**：会优先写到 `/dev/shm`（tmpfs）。
+- 严格模式（默认开启）下，若无法使用 tmpfs，将直接 fail-fast，避免任何磁盘落盘。
 
 ---
 
@@ -207,6 +212,29 @@ Crash 判定口径：
   - 运行前会把 argv 中的 `@@` 替换为 `.cur_input` 的绝对路径
 
 注意：当前实现即使在 STDIN 模式下也会覆盖写 `.cur_input`（用于快速抓取“最近一次输入”调试）。
+
+更新：现在 STDIN 模式默认 **不写** `.cur_input`（避免无谓落盘）；仅当显式开启 `-Dnju.fuzzer.persistTmpInputs=true` 时才会写。
+
+---
+
+## 运行期 IO 行为（重要）
+
+本项目提供若干 JVM 系统属性用于控制长跑 IO：
+
+- `-Dnju.fuzzer.execLogs=interesting|all|none`
+  - 默认 `interesting`：仅在“晋升为 interesting”时进行一次 best-effort 的二次执行抓 stdout/stderr，并写入 `workdir/tmp/exec-logs`。
+  - `all`：每次执行都抓 stdout/stderr（仅非空才写），长跑可能产生大量文件。
+  - `none`：完全丢弃 stdout/stderr。
+- `-Dnju.fuzzer.execLogsMaxBytes=<bytes>`：单次执行捕获 stdout/stderr 的最大字节数（默认 1MB）。
+
+- `-Dnju.fuzzer.tmpInputsDir=<path>`：覆盖 `.cur_input` 的目录（FILE 模式使用）。
+- `-Dnju.fuzzer.requireTmpfsInputs=true|false`：是否强制 tmpfs（默认 `true`）。
+  - 为 `true` 时，若 tmpInputsDir 不在 tmpfs（例如不在 `/dev/shm` 且 fileStore 不是 tmpfs/ramfs），将 fail-fast。
+
+- `-Dnju.fuzzer.persistTmpInputs=true|false`：STDIN 模式是否也写 `.cur_input`（默认 `false`）。
+
+- `-Dnju.fuzzer.curveBucketSec=<sec>`：`stats/curve.csv` 的分桶间隔秒数（默认 1）。
+- `-Dnju.fuzzer.statsFlushEvery=<N>`：`stats.csv/curve.csv` 每写 N 行 flush（默认 100；<=0 表示仅 close 时 flush）。
 
 #### 6.3 Maven 传参建议（减少引号问题）
 

@@ -43,6 +43,15 @@ class FuzzingEngineIntegrationTest {
 
     @Test
     void shouldRunWithoutCoverage() throws Exception {
+        String prevExecLogs = System.getProperty("nju.fuzzer.execLogs");
+        String prevPersistTmpInputs = System.getProperty("nju.fuzzer.persistTmpInputs");
+        String prevTmpInputsDir = System.getProperty("nju.fuzzer.tmpInputsDir");
+        String prevRequireTmpfsInputs = System.getProperty("nju.fuzzer.requireTmpfsInputs");
+        System.setProperty("nju.fuzzer.execLogs", "all");
+        System.setProperty("nju.fuzzer.persistTmpInputs", "true");
+        System.setProperty("nju.fuzzer.tmpInputsDir", workdir.resolve("tmp/inputs").toString());
+        System.setProperty("nju.fuzzer.requireTmpfsInputs", "false");
+
         // Target: /bin/cat (non-instrumented)
         TargetSpec spec = new TargetSpec(
                 "T_CAT",
@@ -62,7 +71,14 @@ class FuzzingEngineIntegrationTest {
         );
 
         // Should run without errors
-        assertDoesNotThrow(() -> engine.run());
+        try {
+            assertDoesNotThrow(() -> engine.run());
+        } finally {
+            if (prevExecLogs == null) System.clearProperty("nju.fuzzer.execLogs"); else System.setProperty("nju.fuzzer.execLogs", prevExecLogs);
+            if (prevPersistTmpInputs == null) System.clearProperty("nju.fuzzer.persistTmpInputs"); else System.setProperty("nju.fuzzer.persistTmpInputs", prevPersistTmpInputs);
+            if (prevTmpInputsDir == null) System.clearProperty("nju.fuzzer.tmpInputsDir"); else System.setProperty("nju.fuzzer.tmpInputsDir", prevTmpInputsDir);
+            if (prevRequireTmpfsInputs == null) System.clearProperty("nju.fuzzer.requireTmpfsInputs"); else System.setProperty("nju.fuzzer.requireTmpfsInputs", prevRequireTmpfsInputs);
+        }
 
         // Verify basic structure
         assertTrue(Files.exists(workdir.resolve("stats/stats.csv")));
@@ -84,6 +100,15 @@ class FuzzingEngineIntegrationTest {
             System.out.println("INFO: Skipping test - AFL++ instrumented lua not found at " + luaBinary);
             return; // Skip test gracefully
         }
+
+        String prevExecLogs = System.getProperty("nju.fuzzer.execLogs");
+        String prevPersistTmpInputs = System.getProperty("nju.fuzzer.persistTmpInputs");
+        String prevTmpInputsDir = System.getProperty("nju.fuzzer.tmpInputsDir");
+        String prevRequireTmpfsInputs = System.getProperty("nju.fuzzer.requireTmpfsInputs");
+        System.setProperty("nju.fuzzer.execLogs", "all");
+        System.setProperty("nju.fuzzer.persistTmpInputs", "true");
+        System.setProperty("nju.fuzzer.tmpInputsDir", workdir.resolve("tmp/inputs").toString());
+        System.setProperty("nju.fuzzer.requireTmpfsInputs", "false");
 
         // Create corpus manager
         CorpusManager corpusManager = new FileCorpusManager(workdir);
@@ -114,7 +139,14 @@ class FuzzingEngineIntegrationTest {
         );
 
         // Run the engine
-        assertDoesNotThrow(() -> engine.run());
+        try {
+            assertDoesNotThrow(() -> engine.run());
+        } finally {
+            if (prevExecLogs == null) System.clearProperty("nju.fuzzer.execLogs"); else System.setProperty("nju.fuzzer.execLogs", prevExecLogs);
+            if (prevPersistTmpInputs == null) System.clearProperty("nju.fuzzer.persistTmpInputs"); else System.setProperty("nju.fuzzer.persistTmpInputs", prevPersistTmpInputs);
+            if (prevTmpInputsDir == null) System.clearProperty("nju.fuzzer.tmpInputsDir"); else System.setProperty("nju.fuzzer.tmpInputsDir", prevTmpInputsDir);
+            if (prevRequireTmpfsInputs == null) System.clearProperty("nju.fuzzer.requireTmpfsInputs"); else System.setProperty("nju.fuzzer.requireTmpfsInputs", prevRequireTmpfsInputs);
+        }
 
         // Verify corpus directories were created
         assertTrue(Files.exists(workdir.resolve("queue")));

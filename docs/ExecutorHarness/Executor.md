@@ -109,9 +109,15 @@ if (timedOut) {
 
 6. **日志管理**
 
-    - 默认 stdout/stderr 会重定向到文件：`stdout_{execId}.log`, `stderr_{execId}.log`
-    - 文件名包含 execId，避免并发冲突
-    - 若长跑产生大量小文件，可通过 JVM 系统属性关闭落盘：`-Dnju.fuzzer.execLogs=none`（stdout/stderr 将丢弃）
+        `ProcessExecutor` 的 stdout/stderr 落盘由 JVM 系统属性控制：
+
+        - `-Dnju.fuzzer.execLogs=interesting|all|none`
+            - 默认 `interesting`：执行器本身不会落盘 stdout/stderr；由上层（`FuzzingEngine`）在“晋升为 interesting”时临时切到 `all` 并二次执行抓日志。
+            - `all`：每次执行都抓 stdout/stderr，并写入 `outDir/stdout_<execId>.log` / `outDir/stderr_<execId>.log`。
+            - `none`：完全丢弃 stdout/stderr。
+
+        - 重要优化：仅当 stdout/stderr **非空**时才写文件（避免 0 字节小文件爆炸）。
+        - `-Dnju.fuzzer.execLogsMaxBytes=<bytes>`：单次执行最多捕获的 stdout/stderr 字节数（默认 1MB；用于避免异常输出导致内存/磁盘压力）。
 
 #### 返回值：`RunResult`
 

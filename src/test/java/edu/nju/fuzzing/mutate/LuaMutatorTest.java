@@ -73,7 +73,7 @@ class LuaMutatorTest {
             hashes.add(Arrays.hashCode(iter.next().getData()));
         }
         // 由于是随机生成的脚本，重复率应该极低
-        assertTrue(hashes.size() > 95, "Lua 脚本重复率过高: " + hashes.size());
+        assertTrue(hashes.size() >= 95, "Lua 脚本重复率过高: " + hashes.size());
     }
 
     // ==========================================

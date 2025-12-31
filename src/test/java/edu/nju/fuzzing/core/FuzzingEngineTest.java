@@ -27,6 +27,15 @@ class FuzzingEngineTest {
         Path workdir = tempDir.resolve("workdir");
         Files.createDirectories(workdir);
 
+        String prevExecLogs = System.getProperty("nju.fuzzer.execLogs");
+        String prevPersistTmpInputs = System.getProperty("nju.fuzzer.persistTmpInputs");
+        String prevTmpInputsDir = System.getProperty("nju.fuzzer.tmpInputsDir");
+        String prevRequireTmpfsInputs = System.getProperty("nju.fuzzer.requireTmpfsInputs");
+        System.setProperty("nju.fuzzer.execLogs", "all");
+        System.setProperty("nju.fuzzer.persistTmpInputs", "true");
+        System.setProperty("nju.fuzzer.tmpInputsDir", workdir.resolve("tmp/inputs").toString());
+        System.setProperty("nju.fuzzer.requireTmpfsInputs", "false");
+
         TargetSpec spec = new TargetSpec(
                 "DEMO",
                 Path.of("/bin/cat"),
@@ -47,7 +56,14 @@ class FuzzingEngineTest {
                 0
         );
 
-        engine.run();
+        try {
+            engine.run();
+        } finally {
+            if (prevExecLogs == null) System.clearProperty("nju.fuzzer.execLogs"); else System.setProperty("nju.fuzzer.execLogs", prevExecLogs);
+            if (prevPersistTmpInputs == null) System.clearProperty("nju.fuzzer.persistTmpInputs"); else System.setProperty("nju.fuzzer.persistTmpInputs", prevPersistTmpInputs);
+            if (prevTmpInputsDir == null) System.clearProperty("nju.fuzzer.tmpInputsDir"); else System.setProperty("nju.fuzzer.tmpInputsDir", prevTmpInputsDir);
+            if (prevRequireTmpfsInputs == null) System.clearProperty("nju.fuzzer.requireTmpfsInputs"); else System.setProperty("nju.fuzzer.requireTmpfsInputs", prevRequireTmpfsInputs);
+        }
 
         // 1) stats 文件存在且有数据行
         Path stats = workdir.resolve("stats/stats.csv");
@@ -97,6 +113,15 @@ class FuzzingEngineTest {
         Path workdir = tempDir.resolve("workdir_file");
         Files.createDirectories(workdir);
 
+        String prevExecLogs = System.getProperty("nju.fuzzer.execLogs");
+        String prevPersistTmpInputs = System.getProperty("nju.fuzzer.persistTmpInputs");
+        String prevTmpInputsDir = System.getProperty("nju.fuzzer.tmpInputsDir");
+        String prevRequireTmpfsInputs = System.getProperty("nju.fuzzer.requireTmpfsInputs");
+        System.setProperty("nju.fuzzer.execLogs", "all");
+        System.setProperty("nju.fuzzer.persistTmpInputs", "true");
+        System.setProperty("nju.fuzzer.tmpInputsDir", workdir.resolve("tmp/inputs").toString());
+        System.setProperty("nju.fuzzer.requireTmpfsInputs", "false");
+
         TargetSpec spec = new TargetSpec(
                 "DEMO_FILE",
                 Path.of("/bin/cat"),
@@ -115,7 +140,14 @@ class FuzzingEngineTest {
                 0
         );
 
-        engine.run();
+        try {
+            engine.run();
+        } finally {
+            if (prevExecLogs == null) System.clearProperty("nju.fuzzer.execLogs"); else System.setProperty("nju.fuzzer.execLogs", prevExecLogs);
+            if (prevPersistTmpInputs == null) System.clearProperty("nju.fuzzer.persistTmpInputs"); else System.setProperty("nju.fuzzer.persistTmpInputs", prevPersistTmpInputs);
+            if (prevTmpInputsDir == null) System.clearProperty("nju.fuzzer.tmpInputsDir"); else System.setProperty("nju.fuzzer.tmpInputsDir", prevTmpInputsDir);
+            if (prevRequireTmpfsInputs == null) System.clearProperty("nju.fuzzer.requireTmpfsInputs"); else System.setProperty("nju.fuzzer.requireTmpfsInputs", prevRequireTmpfsInputs);
+        }
 
         // exec logs 目录至少有一个 stdout_<id>.log 且包含关键字
         Path logsDir = workdir.resolve("tmp/exec-logs");
