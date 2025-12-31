@@ -8,7 +8,7 @@ fi
 
 PROG="$1"
 
-CURVE_BUCKET_SEC=2
+CURVE_BUCKET_SEC=1
 
 # 根据程序名映射到对应的种子文件夹ID
 case "$PROG" in
@@ -43,4 +43,4 @@ echo "Seed Directory: $SEEDS_DIR"
 mvn -q -DskipTests exec:java \
     -Dnju.fuzzer.curveBucketSec=$CURVE_BUCKET_SEC \
   -Dexec.mainClass=edu.nju.fuzzing.cli.FuzzerMain \
-    -Dexec.args="--workdir $WORKDIR --seeds $SEEDS_DIR --duration 3600 --timeout 500 --tid $PROG --coverage shmex --cmd \"$CMD\""
+    -Dexec.args="--workdir $WORKDIR --seeds $SEEDS_DIR --duration 3600 --timeout 1000 --tid $PROG --coverage shmex --cmd \"$CMD\""
