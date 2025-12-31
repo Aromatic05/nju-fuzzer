@@ -18,6 +18,21 @@ public class ProcessExecutor implements Executor {
 
     private final AtomicLong execIdCounter = new AtomicLong(0);
 
+    private enum ExecLogMode {
+        ALL,
+        NONE
+    }
+
+    private static ExecLogMode execLogMode() {
+        String raw = System.getProperty("nju.fuzzer.execLogs", "all");
+        if (raw == null) return ExecLogMode.ALL;
+        String v = raw.trim().toLowerCase();
+        return switch (v) {
+            case "none", "off", "disable", "disabled", "0", "false" -> ExecLogMode.NONE;
+            default -> ExecLogMode.ALL;
+        };
+    }
+
     @Override
     public RunResult run(TargetCommand cmd, byte[] stdinData, Duration timeout, Path outDir) throws Exception {
         if (cmd == null) throw new IllegalArgumentException("cmd is null");
@@ -29,17 +44,27 @@ public class ProcessExecutor implements Executor {
         // Avoid zero/negative timeouts causing immediate waitFor(0)
         long timeoutMs = Math.max(1L, effectiveTimeout.toMillis());
 
-        Files.createDirectories(outDir);
+        ExecLogMode logMode = execLogMode();
 
-        // logs: include execId to avoid overwriting across runs
-        Path stdoutFile = outDir.resolve("stdout_" + execId + ".log");
-        Path stderrFile = outDir.resolve("stderr_" + execId + ".log");
+        Path stdoutFile = null;
+        Path stderrFile = null;
+        if (logMode == ExecLogMode.ALL) {
+            Files.createDirectories(outDir);
+            // logs: include execId to avoid overwriting across runs
+            stdoutFile = outDir.resolve("stdout_" + execId + ".log");
+            stderrFile = outDir.resolve("stderr_" + execId + ".log");
+        }
 
         ProcessBuilder pb = new ProcessBuilder(cmd.argv());
 
-        // stdout/stderr redirection (always to files in this executor implementation)
-        pb.redirectOutput(stdoutFile.toFile());
-        pb.redirectError(stderrFile.toFile());
+        // stdout/stderr redirection
+        if (logMode == ExecLogMode.ALL) {
+            pb.redirectOutput(stdoutFile.toFile());
+            pb.redirectError(stderrFile.toFile());
+        } else {
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+        }
 
         // Ensure we can write stdin (PIPE) when needed; we'll close it otherwise
         pb.redirectInput(ProcessBuilder.Redirect.PIPE);

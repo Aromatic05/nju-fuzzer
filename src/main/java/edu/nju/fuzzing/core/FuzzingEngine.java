@@ -365,7 +365,10 @@ public class FuzzingEngine {
         Path tmpInputsDir = workdir.resolve("tmp/inputs");
         Path execLogsDir = workdir.resolve("tmp/exec-logs");
         Files.createDirectories(tmpInputsDir);
-        Files.createDirectories(execLogsDir);
+        String execLogsMode = System.getProperty("nju.fuzzer.execLogs", "all");
+        if (execLogsMode == null || execLogsMode.isBlank() || execLogsMode.trim().equalsIgnoreCase("all")) {
+            Files.createDirectories(execLogsDir);
+        }
 
         // Reused input file to avoid creating millions of temp files.
         Path currentInputFile = tmpInputsDir.resolve(".cur_input");

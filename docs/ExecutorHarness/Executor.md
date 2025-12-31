@@ -109,9 +109,9 @@ if (timedOut) {
 
 6. **日志管理**
 
-   - stdout/stderr 自动重定向到文件：`stdout_{execId}.log`, `stderr_{execId}.log`
-   - 文件名包含 execId，避免并发冲突
-   - 上层可选择是否保留日志（崩溃/超时场景需要保留）
+    - 默认 stdout/stderr 会重定向到文件：`stdout_{execId}.log`, `stderr_{execId}.log`
+    - 文件名包含 execId，避免并发冲突
+    - 若长跑产生大量小文件，可通过 JVM 系统属性关闭落盘：`-Dnju.fuzzer.execLogs=none`（stdout/stderr 将丢弃）
 
 #### 返回值：`RunResult`
 
