@@ -362,13 +362,30 @@ public class FuzzingEngine {
             curveBucketSec = 1;
         }
 
-        String execLogsMode = System.getProperty("nju.fuzzer.execLogs", "all");
-        String execLogsModeNorm = (execLogsMode == null) ? "all" : execLogsMode.trim().toLowerCase();
+        String execLogsMode = System.getProperty("nju.fuzzer.execLogs", "interesting");
+        String execLogsModeNorm = (execLogsMode == null) ? "interesting" : execLogsMode.trim().toLowerCase();
+
+        boolean requireTmpfsInputs = true;
+        try {
+            String raw = System.getProperty("nju.fuzzer.requireTmpfsInputs", "true");
+            requireTmpfsInputs = raw == null || raw.isBlank() || !raw.trim().equalsIgnoreCase("false");
+        } catch (Exception ignored) {
+            requireTmpfsInputs = true;
+        }
 
         String tmpInputsRootRaw = System.getProperty("nju.fuzzer.tmpInputsDir", "");
         Path tmpInputsDir = (tmpInputsRootRaw == null || tmpInputsRootRaw.isBlank())
-                ? workdir.resolve("tmp/inputs")
-                : Path.of(tmpInputsRootRaw.trim());
+            ? defaultTmpInputsDir(workdir, requireTmpfsInputs)
+            : Path.of(tmpInputsRootRaw.trim());
+
+        if (requireTmpfsInputs && !isTmpfsPath(tmpInputsDir)) {
+            throw new IllegalStateException(
+                "tmpInputsDir must be on tmpfs when nju.fuzzer.requireTmpfsInputs=true. " +
+                "Got: " + tmpInputsDir + ". " +
+                "Either set -Dnju.fuzzer.tmpInputsDir to a tmpfs path (e.g. under /dev/shm) " +
+                "or disable with -Dnju.fuzzer.requireTmpfsInputs=false"
+            );
+        }
 
         Path execLogsDir = workdir.resolve("tmp/exec-logs");
 
@@ -407,50 +424,41 @@ public class FuzzingEngine {
 
         long startSec = Instant.now().getEpochSecond();
 
-           try (StatsWriter writer = new StatsWriter(statsFile);
-               StatsCurveWriter curveWriter = new StatsCurveWriter(curveFile, curveBucketSec)) {
+        try (StatsWriter writer = new StatsWriter(statsFile);
+             StatsCurveWriter curveWriter = new StatsCurveWriter(curveFile, curveBucketSec)) {
             long lastTickAt = System.currentTimeMillis();
-            
+
             // --- 主循环 (Fuzzing Loop) ---
+            outer:
             while (true) {
-                // 时间检查
                 long nowSec = Instant.now().getEpochSecond();
                 if (nowSec - startSec >= durationSec) {
                     statusPrinter.printEvent("Time up! Stopping fuzzing.");
                     break;
                 }
 
-                // A. 选种 (Selection)
                 Seed parentSeed = prioritizer.pick(seedQueue.getSeeds());
                 if (parentSeed == null) {
-                    // 队列为空的极端情况处理
-                    statusPrinter.printEvent("Queue is empty! Waiting...");
-                    Thread.sleep(1000);
+                    // Should not normally happen, but fail-safe to avoid NPE.
                     continue;
                 }
 
-                // B. 定能 (Scheduling)
-                int energy = scheduler.assignEnergy(parentSeed);
-
-                // C. 变异 (Mutation)
+                int energy = Math.max(1, scheduler.assignEnergy(parentSeed));
                 Iterator<Testcase> mutations = mutator.mutate(parentSeed, energy);
 
-                // D. 执行子循环
                 while (mutations.hasNext()) {
-                    // 时间检查 (粒度更细，避免在长 energy 循环中超时)
-                    if (Instant.now().getEpochSecond() - startSec >= durationSec) break;
+                    nowSec = Instant.now().getEpochSecond();
+                    if (nowSec - startSec >= durationSec) {
+                        statusPrinter.printEvent("Time up! Stopping fuzzing.");
+                        break outer;
+                    }
 
                     Testcase tc = mutations.next();
 
-                    // E. 执行与监控 (Execution & Monitoring)
-                    // harness 内部负责：beforeRun -> executor.run -> afterRun
                     ExecInput input = buildExecInput(targetSpec, tc, currentInputFile, execLogsDir);
                     ExecResult result = harness.execute(input);
-                    
-                    // 记录执行
                     fuzzStats.recordExec();
 
-                    // Periodic stats tick (for tests + monitoring)
                     long nowMs = System.currentTimeMillis();
                     if (tickIntervalMs == 0 || nowMs - lastTickAt >= tickIntervalMs) {
                         StatsTick tick = fuzzStats.toStatsTick(seedQueue.size());
@@ -459,18 +467,15 @@ public class FuzzingEngine {
                         lastTickAt = nowMs;
                     }
 
-                    // F. 结果处理
                     if (crashOracle.isCrash(result.run())) {
                         handleCrash(tc, result);
                         continue;
                     }
-
                     if (result.isTimeout()) {
                         handleHang(tc, result);
                         continue;
                     }
 
-                    // G. 评估与晋升 (Evaluation & Promotion)
                     handleNormalExecution(tc, result, parentSeed, currentInputFile, execLogsDir, execLogsModeNorm);
 
                     if (tickIntervalMs > 0) {
@@ -478,22 +483,19 @@ public class FuzzingEngine {
                             Thread.sleep(tickIntervalMs);
                         } catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
-                            break;
+                            break outer;
                         }
                     }
                 }
 
-                // 标记该 parent seed 已经 fuzz 过，便于 prioritizer 优先挑“新种子”
                 parentSeed.markAsFuzzed();
                 parentSeed.setEnergy(energy);
                 parentSeed.decreaseHandicap();
-                
-                // Ensure at least one tick per outer loop
+
                 StatsTick tick = fuzzStats.toStatsTick(seedQueue.size());
                 writer.tick(tick);
                 curveWriter.tick(tick);
             }
-
         } finally {
             // 清理资源
             statusPrinter.stop();
@@ -744,10 +746,18 @@ public class FuzzingEngine {
 
         boolean usesFile = spec.argvTemplate().stream().anyMatch("@@"::equals);
 
-        boolean persistTmpInputs = true;
-        String rawPersist = System.getProperty("nju.fuzzer.persistTmpInputs", "true");
+        boolean persistTmpInputs = false;
+        String rawPersist = System.getProperty("nju.fuzzer.persistTmpInputs", "false");
         if (rawPersist != null && !rawPersist.isBlank()) {
             persistTmpInputs = !rawPersist.trim().equalsIgnoreCase("false");
+        }
+
+        boolean requireTmpfsInputs = true;
+        try {
+            String raw = System.getProperty("nju.fuzzer.requireTmpfsInputs", "true");
+            requireTmpfsInputs = raw == null || raw.isBlank() || !raw.trim().equalsIgnoreCase("false");
+        } catch (Exception ignored) {
+            requireTmpfsInputs = true;
         }
 
         // Overwrite a fixed file each time to avoid inode explosion.
@@ -756,6 +766,11 @@ public class FuzzingEngine {
         if (usesFile || persistTmpInputs) {
             if (currentInputFile == null) {
                 throw new IllegalArgumentException("currentInputFile is null");
+            }
+            if (requireTmpfsInputs && !isTmpfsPath(currentInputFile.getParent())) {
+                throw new IllegalStateException(
+                    "Refusing to write .cur_input to non-tmpfs path when nju.fuzzer.requireTmpfsInputs=true: " + currentInputFile
+                );
             }
             Files.write(
                     currentInputFile,
@@ -771,6 +786,50 @@ public class FuzzingEngine {
         var cmd = CommandResolver.resolve(spec, inputFile);
         Duration timeout = (spec.timeout() != null) ? spec.timeout() : Duration.ofSeconds(1);
         return ExecInput.of(cmd, stdinData, timeout, execLogsDir);
+    }
+
+    private static Path defaultTmpInputsDir(Path workdir, boolean requireTmpfsInputs) {
+        // Prefer tmpfs to avoid disk writes for the rotating input file.
+        try {
+            Path shm = Path.of("/dev/shm");
+            if (Files.isDirectory(shm) && Files.isWritable(shm)) {
+                String pid = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
+                // pid may look like "12345@host"; keep it filesystem-friendly.
+                String runId = pid.replace('@', '-');
+                return shm.resolve("nju-fuzzer").resolve(runId).resolve("inputs");
+            }
+        } catch (Exception ignored) {
+        }
+        if (requireTmpfsInputs) {
+            throw new IllegalStateException(
+                "tmpfs inputs required (nju.fuzzer.requireTmpfsInputs=true), but /dev/shm is not usable. " +
+                "Set -Dnju.fuzzer.tmpInputsDir to a tmpfs path, or disable strict mode with -Dnju.fuzzer.requireTmpfsInputs=false"
+            );
+        }
+        // Fallback: workdir/tmp/inputs (may write to disk)
+        return workdir.resolve("tmp/inputs");
+    }
+
+    private static boolean isTmpfsPath(Path path) {
+        if (path == null) return false;
+        try {
+            Path abs = path.toAbsolutePath().normalize();
+            // Fast-path for the common tmpfs mount.
+            if (abs.startsWith(Path.of("/dev/shm"))) return true;
+
+            Path existing = abs;
+            while (existing != null && !Files.exists(existing)) {
+                existing = existing.getParent();
+            }
+            if (existing == null) return false;
+
+            String type = Files.getFileStore(existing).type();
+            if (type == null) return false;
+            String t = type.trim().toLowerCase();
+            return t.equals("tmpfs") || t.equals("ramfs");
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private static Seed createAndAddDummySeed(Path seedDir) throws IOException {

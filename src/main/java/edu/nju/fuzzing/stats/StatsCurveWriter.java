@@ -15,6 +15,9 @@ import java.nio.file.StandardOpenOption;
 public class StatsCurveWriter implements AutoCloseable {
 
     private final BufferedWriter writer;
+    private final int flushEvery;
+    private int pending = 0;
+    private boolean closed = false;
 
     private final long bucketSeconds;
 
@@ -45,6 +48,19 @@ public class StatsCurveWriter implements AutoCloseable {
                 StandardOpenOption.CREATE,
                 StandardOpenOption.APPEND
         );
+
+        int fe = 100;
+        try {
+            String raw = System.getProperty("nju.fuzzer.statsFlushEvery", "100");
+            if (raw != null && !raw.isBlank()) {
+                fe = Integer.parseInt(raw.trim());
+            }
+        } catch (Exception ignored) {
+            fe = 100;
+        }
+        // <=0 means "flush only on close".
+        this.flushEvery = (fe <= 0) ? Integer.MAX_VALUE : fe;
+
         if (!exists) {
             writer.write("timestamp,target_name,covered_edges,total_paths,new_edges,new_paths,exec_count,new_execs,crash_count,new_crashes,hang_count,new_hangs\n");
             writer.flush();
@@ -120,7 +136,12 @@ public class StatsCurveWriter implements AutoCloseable {
                 currentHangs,
                 newHangs
         ));
-        writer.flush();
+
+        pending++;
+        if (pending >= flushEvery) {
+            writer.flush();
+            pending = 0;
+        }
 
         prevCoveredEdges = currentCoveredEdges;
         prevTotalPaths = currentTotalPaths;
@@ -131,9 +152,15 @@ public class StatsCurveWriter implements AutoCloseable {
 
     @Override
     public void close() throws IOException {
-        if (currentBucketStartSec != -1) {
-            writeCurrentRow();
+        if (closed) return;
+        closed = true;
+        try {
+            if (currentBucketStartSec != -1) {
+                writeCurrentRow();
+            }
+            writer.flush();
+        } finally {
+            writer.close();
         }
-        writer.close();
     }
 }

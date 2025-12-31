@@ -83,12 +83,11 @@ SeedQueue -> SeedPrioritizer -> PowerScheduler -> Mutator -> Testcase
 启动时会确保创建（或存在）：
 
 - `workdir/stats/stats.csv`：统计 CSV
-- `workdir/tmp/inputs/`：当前输入工件（`.cur_input`）
-- `workdir/tmp/exec-logs/`：执行 stdout/stderr（由 `ProcessExecutor` 写入）
+- `workdir/tmp/exec-logs/`：执行 stdout/stderr（默认仅在“晋升为 interesting”时保存，且仅保存非空输出）
 
-> 注意：为了避免长跑写爆 inode，当前实现复用 `workdir/tmp/inputs/.cur_input`，每次执行覆盖写入（不会产生海量小文件）。
-
-补充说明：当前 `ProcessExecutor` 实现会为每次执行都写 `stdout_<execId>.log/stderr_<execId>.log`，因此 `tmp/exec-logs` 目录在长跑下可能产生大量小文件（详见“已知限制”）。
+> 注意：为了避免长跑写爆 inode，FILE 模式下当前实现复用单个 `.cur_input`（每次覆盖写），不会产生海量 inputs 小文件。
+>
+> `.cur_input` 默认不会写到 workdir：引擎会优先使用 `/dev/shm`（tmpfs）。严格模式（默认开启）下，若无法使用 tmpfs，将 fail-fast，避免磁盘落盘。
 
 ### 2) 初始种子加载
 
@@ -130,20 +129,19 @@ SeedQueue -> SeedPrioritizer -> PowerScheduler -> Mutator -> Testcase
 
 `buildExecInput` 的职责是把 `TargetSpec + Testcase` 转为 `ExecInput`：
 
-- 统一把 testcase bytes 写入固定文件 `tmp/inputs/.cur_input`
 - 如果 argvTemplate 含 `@@`：
-  - 走 FILE 模式，把 `.cur_input` 作为 `inputFile` 传给 `CommandResolver`
+  - 走 FILE 模式：把 testcase bytes 覆盖写入固定文件 `.cur_input`（位于 tmpfs 优先的 tmpInputsDir），并把该路径替换给 `@@`
   - `stdinData=null`
 - 否则：
-  - 走 STDIN 模式，`stdinData = testcase.data`
-  - `inputFile=null`
+  - 走 STDIN 模式：`stdinData = testcase.data`，默认不写 `.cur_input`
+  - 如需把 STDIN 也落为 `.cur_input`（调试/复现），可设置 `-Dnju.fuzzer.persistTmpInputs=true`
 
 这样做有两个目的：
 
 1. 支持 `@@` 文件输入模式（很多目标只支持 file 输入）
 2. 避免为每次执行创建独立临时文件导致 inode/磁盘耗尽
 
-补充：当前 `ProcessExecutor` 仍会为每次执行写 stdout/stderr 文件到 `tmp/exec-logs/`，因此“输入文件”复用只能解决 inputs 目录的爆炸问题。
+补充：stdout/stderr 默认不会为每次执行落盘。默认策略是 `-Dnju.fuzzer.execLogs=interesting`，仅在输入被确认“晋升为 interesting”时，由引擎进行一次 best-effort 二次执行抓 stdout/stderr，并写到 `workdir/tmp/exec-logs`（且仅保存非空输出）。
 
 ---
 
@@ -188,7 +186,20 @@ CSV 的字段定义以 `docs/stats/stats.md` 为准。
 ### 已知限制（当前实现刻意简化）
 
 - interesting 判定主要依赖 `CoverageEx.interesting()`（本地 diff/策略），全局裁判（CoverageDB）只在 edge-level 数据可用时参与。
-- `ExecInput.saveLogs` 目前未在引擎中进行“仅 crash/hang 才保存日志”的细粒度控制；并且当前 `ProcessExecutor` 会为每次执行写 stdout/stderr 文件（长跑可能产生大量小文件）。
+- `ExecInput.saveLogs` 当前不作为 stdout/stderr 落盘开关使用；日志落盘由系统属性 `nju.fuzzer.execLogs` 控制。
+- 在默认 `execLogs=interesting` 策略下，日志是在“晋升为 interesting 时”的二次执行中抓取的，因此 `tmp/exec-logs` 文件数量与晋升次数近似成正比（每次晋升通常 1~2 个文件）。
+
+---
+
+## 运行期关键系统属性（IO/可观测性）
+
+- `-Dnju.fuzzer.execLogs=interesting|all|none`
+- `-Dnju.fuzzer.execLogsMaxBytes=<bytes>`（默认 1MB）
+- `-Dnju.fuzzer.tmpInputsDir=<path>`（覆盖 `.cur_input` 目录，仅 FILE 模式需要）
+- `-Dnju.fuzzer.requireTmpfsInputs=true|false`（默认 true；true 时强制 tmpfs）
+- `-Dnju.fuzzer.persistTmpInputs=true|false`（默认 false；STDIN 是否也写 `.cur_input`）
+- `-Dnju.fuzzer.curveBucketSec=<sec>`（默认 1；曲线分桶）
+- `-Dnju.fuzzer.statsFlushEvery=<N>`（默认 100；stats/curve 的 flush 批次）
 - 缺少 AFL++ 风格的阶段化变异（deterministic/havoc/splice）编排；目前由 `Mutator` 自己决定生成策略。
 
 变异接线说明（当前默认行为）：

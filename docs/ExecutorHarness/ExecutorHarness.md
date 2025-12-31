@@ -211,6 +211,11 @@ public record ExecInput(
 - 正常执行：`ExecInput.of(...)`（不保存日志）
 - 崩溃/超时：`ExecInput.withLogs(...)`（保存日志供调试）
 
+> 重要说明（当前实现）：stdout/stderr 的实际落盘由 `ProcessExecutor` 读取 JVM 系统属性 `nju.fuzzer.execLogs` 控制。
+> 也就是说，`ExecInput.saveLogs` 目前不作为落盘开关使用。
+>
+> 当前默认策略是：全局 `-Dnju.fuzzer.execLogs=interesting`，仅在 `FuzzingEngine` 确认某个输入需要晋升为 interesting 时，进行一次 best-effort 的二次执行并临时切换到 `execLogs=all` 来抓取 stdout/stderr（且仅保存非空输出）。
+
 ### `ExecResult` - 执行结果
 
 位置：`edu.nju.fuzzing.model.ExecResult`

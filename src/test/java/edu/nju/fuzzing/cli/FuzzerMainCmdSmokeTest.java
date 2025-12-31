@@ -21,13 +21,29 @@ class FuzzerMainCmdSmokeTest {
     void main_withCmdCat_shouldRunInStdinModeAndPersistLogs() throws Exception {
         Path workdir = tempDir.resolve("w1");
 
-        FuzzerMain.main(new String[]{
-                "--workdir", workdir.toString(),
-                "--duration", "1",
-                "--timeout", "500",
-                "--tid", "T_STDIN",
-                "--cmd", "/bin/cat"
-        });
+        String prevExecLogs = System.getProperty("nju.fuzzer.execLogs");
+        String prevPersistTmpInputs = System.getProperty("nju.fuzzer.persistTmpInputs");
+        String prevTmpInputsDir = System.getProperty("nju.fuzzer.tmpInputsDir");
+        String prevRequireTmpfsInputs = System.getProperty("nju.fuzzer.requireTmpfsInputs");
+        System.setProperty("nju.fuzzer.execLogs", "all");
+        System.setProperty("nju.fuzzer.persistTmpInputs", "true");
+        System.setProperty("nju.fuzzer.tmpInputsDir", workdir.resolve("tmp/inputs").toString());
+        System.setProperty("nju.fuzzer.requireTmpfsInputs", "false");
+
+        try {
+            FuzzerMain.main(new String[]{
+                    "--workdir", workdir.toString(),
+                    "--duration", "1",
+                    "--timeout", "500",
+                    "--tid", "T_STDIN",
+                    "--cmd", "/bin/cat"
+            });
+        } finally {
+            if (prevExecLogs == null) System.clearProperty("nju.fuzzer.execLogs"); else System.setProperty("nju.fuzzer.execLogs", prevExecLogs);
+            if (prevPersistTmpInputs == null) System.clearProperty("nju.fuzzer.persistTmpInputs"); else System.setProperty("nju.fuzzer.persistTmpInputs", prevPersistTmpInputs);
+            if (prevTmpInputsDir == null) System.clearProperty("nju.fuzzer.tmpInputsDir"); else System.setProperty("nju.fuzzer.tmpInputsDir", prevTmpInputsDir);
+            if (prevRequireTmpfsInputs == null) System.clearProperty("nju.fuzzer.requireTmpfsInputs"); else System.setProperty("nju.fuzzer.requireTmpfsInputs", prevRequireTmpfsInputs);
+        }
 
         Path logsDir = workdir.resolve("tmp/exec-logs");
         assertTrue(Files.isDirectory(logsDir), "exec-logs dir should exist");
@@ -61,13 +77,29 @@ class FuzzerMainCmdSmokeTest {
     void main_withCmdCatAtAt_shouldRunInFileModeAndPersistLogs() throws Exception {
         Path workdir = tempDir.resolve("w2");
 
-        FuzzerMain.main(new String[]{
-                "--workdir", workdir.toString(),
-                "--duration", "1",
-                "--timeout", "500",
-                "--tid", "T_FILE",
-                "--cmd", "/bin/cat @@"
-        });
+        String prevExecLogs = System.getProperty("nju.fuzzer.execLogs");
+        String prevPersistTmpInputs = System.getProperty("nju.fuzzer.persistTmpInputs");
+        String prevTmpInputsDir = System.getProperty("nju.fuzzer.tmpInputsDir");
+        String prevRequireTmpfsInputs = System.getProperty("nju.fuzzer.requireTmpfsInputs");
+        System.setProperty("nju.fuzzer.execLogs", "all");
+        System.setProperty("nju.fuzzer.persistTmpInputs", "true");
+        System.setProperty("nju.fuzzer.tmpInputsDir", workdir.resolve("tmp/inputs").toString());
+        System.setProperty("nju.fuzzer.requireTmpfsInputs", "false");
+
+        try {
+            FuzzerMain.main(new String[]{
+                    "--workdir", workdir.toString(),
+                    "--duration", "1",
+                    "--timeout", "500",
+                    "--tid", "T_FILE",
+                    "--cmd", "/bin/cat @@"
+            });
+        } finally {
+            if (prevExecLogs == null) System.clearProperty("nju.fuzzer.execLogs"); else System.setProperty("nju.fuzzer.execLogs", prevExecLogs);
+            if (prevPersistTmpInputs == null) System.clearProperty("nju.fuzzer.persistTmpInputs"); else System.setProperty("nju.fuzzer.persistTmpInputs", prevPersistTmpInputs);
+            if (prevTmpInputsDir == null) System.clearProperty("nju.fuzzer.tmpInputsDir"); else System.setProperty("nju.fuzzer.tmpInputsDir", prevTmpInputsDir);
+            if (prevRequireTmpfsInputs == null) System.clearProperty("nju.fuzzer.requireTmpfsInputs"); else System.setProperty("nju.fuzzer.requireTmpfsInputs", prevRequireTmpfsInputs);
+        }
 
         Path logsDir = workdir.resolve("tmp/exec-logs");
         assertTrue(Files.isDirectory(logsDir), "exec-logs dir should exist");
@@ -106,7 +138,17 @@ class FuzzerMainCmdSmokeTest {
         byte[] payload = "from-custom-seeds".getBytes(StandardCharsets.UTF_8);
         Files.write(seedsDir.resolve("seed1"), payload);
 
-        FuzzerMain.main(new String[]{
+        String prevExecLogs = System.getProperty("nju.fuzzer.execLogs");
+        String prevPersistTmpInputs = System.getProperty("nju.fuzzer.persistTmpInputs");
+        String prevTmpInputsDir = System.getProperty("nju.fuzzer.tmpInputsDir");
+        String prevRequireTmpfsInputs = System.getProperty("nju.fuzzer.requireTmpfsInputs");
+        System.setProperty("nju.fuzzer.execLogs", "all");
+        System.setProperty("nju.fuzzer.persistTmpInputs", "true");
+        System.setProperty("nju.fuzzer.tmpInputsDir", workdir.resolve("tmp/inputs").toString());
+        System.setProperty("nju.fuzzer.requireTmpfsInputs", "false");
+
+        try {
+            FuzzerMain.main(new String[]{
                 "--workdir", workdir.toString(),
                 "--seeds", seedsDir.toString(),
                 "--duration", "1",
@@ -114,7 +156,13 @@ class FuzzerMainCmdSmokeTest {
                 "--tid", "T_SEEDS",
                 "--cmd", "/bin/cat",
                 "--coverage", "none"
-        });
+            });
+        } finally {
+            if (prevExecLogs == null) System.clearProperty("nju.fuzzer.execLogs"); else System.setProperty("nju.fuzzer.execLogs", prevExecLogs);
+            if (prevPersistTmpInputs == null) System.clearProperty("nju.fuzzer.persistTmpInputs"); else System.setProperty("nju.fuzzer.persistTmpInputs", prevPersistTmpInputs);
+            if (prevTmpInputsDir == null) System.clearProperty("nju.fuzzer.tmpInputsDir"); else System.setProperty("nju.fuzzer.tmpInputsDir", prevTmpInputsDir);
+            if (prevRequireTmpfsInputs == null) System.clearProperty("nju.fuzzer.requireTmpfsInputs"); else System.setProperty("nju.fuzzer.requireTmpfsInputs", prevRequireTmpfsInputs);
+        }
 
         Path logsDir = workdir.resolve("tmp/exec-logs");
         assertTrue(Files.isDirectory(logsDir), "exec-logs dir should exist");

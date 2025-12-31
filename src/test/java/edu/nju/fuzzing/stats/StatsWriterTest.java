@@ -20,10 +20,13 @@ class StatsWriterTest {
     
     private Path csvPath;
     private StatsWriter writer;
+    private String prevStatsFlushEvery;
 
     @BeforeEach
     void setUp() throws IOException {
         csvPath = tempDir.resolve("stats.csv");
+        prevStatsFlushEvery = System.getProperty("nju.fuzzer.statsFlushEvery");
+        System.setProperty("nju.fuzzer.statsFlushEvery", "1");
         writer = new StatsWriter(csvPath);
     }
 
@@ -32,6 +35,9 @@ class StatsWriterTest {
         if (writer != null) {
             writer.close();
         }
+
+        if (prevStatsFlushEvery == null) System.clearProperty("nju.fuzzer.statsFlushEvery");
+        else System.setProperty("nju.fuzzer.statsFlushEvery", prevStatsFlushEvery);
     }
 
     // --- CSV 格式合规性测试 ---

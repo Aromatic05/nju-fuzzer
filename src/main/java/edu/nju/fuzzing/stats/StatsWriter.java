@@ -10,6 +10,9 @@ import java.nio.file.StandardOpenOption;
 public class StatsWriter implements AutoCloseable {
 
     private final BufferedWriter writer;
+    private final int flushEvery;
+    private int pending = 0;
+    private boolean closed = false;
 
     public StatsWriter(Path statsFile) throws IOException {
         Files.createDirectories(statsFile.getParent());
@@ -19,6 +22,18 @@ public class StatsWriter implements AutoCloseable {
                 StandardOpenOption.CREATE,
                 StandardOpenOption.APPEND
         );
+
+        int fe = 100;
+        try {
+            String raw = System.getProperty("nju.fuzzer.statsFlushEvery", "100");
+            if (raw != null && !raw.isBlank()) {
+                fe = Integer.parseInt(raw.trim());
+            }
+        } catch (Exception ignored) {
+            fe = 100;
+        }
+        // <=0 means "flush only on close".
+        this.flushEvery = (fe <= 0) ? Integer.MAX_VALUE : fe;
         
         // [修改] Header 增加 total_paths 和 hang_count
         if (!exists) {
@@ -41,11 +56,22 @@ public class StatsWriter implements AutoCloseable {
                 t.crashes(),
                 t.hangs()       // [新增]
         ));
-        writer.flush();
+
+        pending++;
+        if (pending >= flushEvery) {
+            writer.flush();
+            pending = 0;
+        }
     }
 
     @Override
     public void close() throws IOException {
-        writer.close();
+        if (closed) return;
+        closed = true;
+        try {
+            writer.flush();
+        } finally {
+            writer.close();
+        }
     }
 }
