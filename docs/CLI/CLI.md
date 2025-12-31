@@ -398,6 +398,23 @@ timestamp,target_name,exec_count,covered_edges,execs_per_sec,queue_size,total_pa
 - writer 实现：[src/main/java/edu/nju/fuzzing/stats/StatsCurveWriter.java](../../src/main/java/edu/nju/fuzzing/stats/StatsCurveWriter.java)
 - 引擎接入（创建并 tick）：[src/main/java/edu/nju/fuzzing/core/FuzzingEngine.java](../../src/main/java/edu/nju/fuzzing/core/FuzzingEngine.java#L333-L410)
 
+### 6) 一键运行脚本：one_click.sh
+
+仓库根目录提供 [one_click.sh](../../one_click.sh)，用于“一条命令跑指定目标”。约束与约定：
+
+- **参数仅一个**：程序名（如 `mjs`、`lua`）
+- 目标程序：`./env/out/<program>`
+- 种子目录：脚本内置 program→ID 映射后使用 `./env/seeds/<ID>/`
+- 输出 workdir：`./workdir/<program>/<YYYYMMDD-HHMMSS>-<pid>/`
+
+运行示例：
+
+- `bash one_click.sh mjs`
+
+可调参数（直接编辑脚本顶部变量）：
+
+- `CURVE_BUCKET_SEC`：曲线分桶间隔（通过 JVM 系统属性 `nju.fuzzer.curveBucketSec` 传入）
+
 ---
 
 ## workdir 目录输出说明（包含使用指导 / 复现指南）

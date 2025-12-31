@@ -220,10 +220,16 @@ RunResult result = executor.run(
 // 5. 检查结果
 if (result.timedOut()) {
     System.out.println("Execution timed out");
-} else if (result.exitCode() != 0) {
-    System.out.println("Crashed with exit code: " + result.exitCode());
 } else {
-    System.out.println("Normal execution: " + result.execTimeMs() + "ms");
+    // 注意：Executor 只负责返回退出码与终止状态；是否算 crash 由 CrashOracle 决定。
+    CrashOracle crashOracle = CrashOracle.defaultOracle();
+    if (crashOracle.isCrash(result)) {
+        System.out.println("Crashed with exit code: " + result.exitCode());
+    } else if (result.exitCode() != 0) {
+        System.out.println("Non-crash abnormal exit: " + result.exitCode());
+    } else {
+        System.out.println("Normal execution: " + result.execTimeMs() + "ms");
+    }
 }
 ```
 
@@ -252,6 +258,21 @@ RunResult result = executor.run(
 ---
 
 ## 设计要点
+
+## Crash 判定：退出码与 crash 的关系
+
+`RunResult` 的 `termination` 只有三类：
+
+- `NORMAL`：退出码为 0
+- `ERROR`：退出码非 0（但不等价于 crash）
+- `TIMEOUT`：超时（上层统计为 hang）
+
+项目中 crash 的判定由 `CrashOracle` 统一处理（位置：`edu.nju.fuzzing.exec.CrashOracle`），核心规则是：
+
+- **默认仅将“signal-like”异常退出视作 crash**：`exitCode > 128`（shell 习惯编码 `exitCode = 128 + signal`，例如 139=SIGSEGV）
+- 默认忽略 `130/143`（SIGINT/SIGTERM），避免手动中断污染 crash 统计
+- 可通过 CLI 参数 `--nonCrashExitCodes` 扩展“非 crash 退出码白名单”（适配目标程序把非 0 当作“输入拒绝”的情况）
+
 
 ### 1. ExecId 一致性
 
