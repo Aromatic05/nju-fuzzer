@@ -376,6 +376,28 @@ timestamp,target_name,exec_count,covered_edges,execs_per_sec,queue_size,total_pa
 
 解释：运行 12 秒，累计执行 534 次；覆盖 edges 2872；速度约 15/s；队列 265；晋升 262；crash 0；hang 18。
 
+### 5) stats/curve.csv：按秒分桶的增长曲线（运行时记录）
+
+除了 `stats.csv`，引擎还会生成一份“每秒一行”的曲线文件（相对 workdir 路径为 `stats/curve.csv`），由 `StatsCurveWriter` 从累计指标推导每秒增量。
+
+输出列：
+
+- `timestamp`：elapsed seconds
+- `target_name`
+- `covered_edges`：截至该秒的累计覆盖（AFL bitmap 非零 byte index 计数）
+- `total_paths`：截至该秒的累计新路径数（interesting inputs）
+- `new_edges`：该秒内新增覆盖（`covered_edges` 的增量）
+- `new_paths`：该秒内新增路径（`total_paths` 的增量）
+- `exec_count`：截至该秒的累计执行次数
+- `new_execs`：该桶（秒/分桶区间）内新增执行次数（`exec_count` 的增量）
+- `crash_count` / `hang_count`：截至该秒的累计数量
+- `new_crashes` / `new_hangs`：该桶内新增 crash/hang 数（对应累计值的增量）
+
+代码位置：
+
+- writer 实现：[src/main/java/edu/nju/fuzzing/stats/StatsCurveWriter.java](../../src/main/java/edu/nju/fuzzing/stats/StatsCurveWriter.java)
+- 引擎接入（创建并 tick）：[src/main/java/edu/nju/fuzzing/core/FuzzingEngine.java](../../src/main/java/edu/nju/fuzzing/core/FuzzingEngine.java#L333-L410)
+
 ---
 
 ## workdir 目录输出说明（包含使用指导 / 复现指南）
