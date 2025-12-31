@@ -1,0 +1,73 @@
+[1mdiff --git a/one_click.sh b/one_click.sh[m
+[1mindex 4ee3b07..d82bedb 100755[m
+[1m--- a/one_click.sh[m
+[1m+++ b/one_click.sh[m
+[36m@@ -29,7 +29,7 @@[m [mesac[m
+ [m
+ WORKDIR="./workdir/$PROG"[m
+ # 修改种子目录路径：使用映射出来的 ID[m
+[31m-SEEDS_DIR="./env/seed/$ID"[m
+[32m+[m[32mSEEDS_DIR="./env/seeds/$ID"[m
+ # 待测程序命令路径保持不变（通常还是用程序名）[m
+ CMD="./env/out/$PROG @@"[m
+ [m
+[36m@@ -39,4 +39,4 @@[m [mecho "Seed Directory: $SEEDS_DIR"[m
+ # 执行 Maven 命令[m
+ mvn -q -DskipTests exec:java \[m
+   -Dexec.mainClass=edu.nju.fuzzing.cli.FuzzerMain \[m
+[31m-  -Dexec.args="--workdir $WORKDIR --seeds $SEEDS_DIR --duration 3600 --timeout 500 --tid $PROG --coverage shmex --cmd \"$CMD\""[m
+\ No newline at end of file[m
+[32m+[m[32m  -Dexec.args="--workdir $WORKDIR --seeds $SEEDS_DIR --duration 60 --timeout 500 --tid $PROG --coverage shmex --cmd \"$CMD\""[m
+\ No newline at end of file[m
+[1mdiff --git a/src/main/java/edu/nju/fuzzing/core/FuzzingEngine.java b/src/main/java/edu/nju/fuzzing/core/FuzzingEngine.java[m
+[1mindex e096396..7d9e92d 100644[m
+[1m--- a/src/main/java/edu/nju/fuzzing/core/FuzzingEngine.java[m
+[1m+++ b/src/main/java/edu/nju/fuzzing/core/FuzzingEngine.java[m
+[36m@@ -25,6 +25,7 @@[m [mimport edu.nju.fuzzing.schedule.SeedPrioritizer;[m
+ import edu.nju.fuzzing.stats.FuzzStats;[m
+ import edu.nju.fuzzing.stats.StatusPrinter;[m
+ import edu.nju.fuzzing.stats.StatsWriter;[m
+[32m+[m[32mimport edu.nju.fuzzing.stats.StatsCurveWriter;[m
+ [m
+ import java.io.IOException;[m
+ import java.nio.charset.StandardCharsets;[m
+[36m@@ -347,6 +348,7 @@[m [mpublic class FuzzingEngine {[m
+     public void run() throws Exception {[m
+         // 1. 准备环境[m
+         Path statsFile = workdir.resolve("stats/stats.csv");[m
+[32m+[m[32m        Path curveFile = workdir.resolve("stats/curve.csv");[m
+         Files.createDirectories(statsFile.getParent());[m
+ [m
+         Path tmpInputsDir = workdir.resolve("tmp/inputs");[m
+[36m@@ -384,7 +386,8 @@[m [mpublic class FuzzingEngine {[m
+ [m
+         long startSec = Instant.now().getEpochSecond();[m
+ [m
+[31m-        try (StatsWriter writer = new StatsWriter(statsFile)) {[m
+[32m+[m[32m           try (StatsWriter writer = new StatsWriter(statsFile);[m
+[32m+[m[32m               StatsCurveWriter curveWriter = new StatsCurveWriter(curveFile)) {[m
+             long lastTickAt = System.currentTimeMillis();[m
+             [m
+             // --- 主循环 (Fuzzing Loop) ---[m
+[36m@@ -429,7 +432,9 @@[m [mpublic class FuzzingEngine {[m
+                     // Periodic stats tick (for tests + monitoring)[m
+                     long nowMs = System.currentTimeMillis();[m
+                     if (tickIntervalMs == 0 || nowMs - lastTickAt >= tickIntervalMs) {[m
+[31m-                        writer.tick(fuzzStats.toStatsTick(seedQueue.size()));[m
+[32m+[m[32m                        StatsTick tick = fuzzStats.toStatsTick(seedQueue.size());[m
+[32m+[m[32m                        writer.tick(tick);[m
+[32m+[m[32m                        curveWriter.tick(tick);[m
+                         lastTickAt = nowMs;[m
+                     }[m
+ [m
+[36m@@ -463,7 +468,9 @@[m [mpublic class FuzzingEngine {[m
+                 parentSeed.decreaseHandicap();[m
+                 [m
+                 // Ensure at least one tick per outer loop[m
+[31m-                writer.tick(fuzzStats.toStatsTick(seedQueue.size()));[m
+[32m+[m[32m                StatsTick tick = fuzzStats.toStatsTick(seedQueue.size());[m
+[32m+[m[32m                writer.tick(tick);[m
+[32m+[m[32m                curveWriter.tick(tick);[m
+             }[m
+ [m
+         } finally {[m
