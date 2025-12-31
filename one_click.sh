@@ -10,6 +10,11 @@ PROG="$1"
 
 CURVE_BUCKET_SEC=1
 
+# 控制每次执行是否落盘 stdout/stderr 到 workdir/tmp/exec-logs
+# all: 每次 exec 都写 stdout_<id>.log / stderr_<id>.log（可能产生海量小文件）
+# none: 不保存（推荐长跑）
+EXEC_LOGS=none
+
 # 根据程序名映射到对应的种子文件夹ID
 case "$PROG" in
     "c++filt") ID="01" ;;
@@ -42,5 +47,6 @@ echo "Seed Directory: $SEEDS_DIR"
 # 执行 Maven 命令
 mvn -q -DskipTests exec:java \
     -Dnju.fuzzer.curveBucketSec=$CURVE_BUCKET_SEC \
+        -Dnju.fuzzer.execLogs=$EXEC_LOGS \
   -Dexec.mainClass=edu.nju.fuzzing.cli.FuzzerMain \
     -Dexec.args="--workdir $WORKDIR --seeds $SEEDS_DIR --duration 3600 --timeout 1000 --tid $PROG --coverage shmex --cmd \"$CMD\""
