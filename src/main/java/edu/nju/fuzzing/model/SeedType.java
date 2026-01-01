@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets;
 
 public enum SeedType {
     ELF, JPEG, PNG, PCAP,
-    XML, JSON, LUA, CXX,
+    XML, MJS, LUA, CXX,
     UNKNOWN;
 
     public static SeedType detect(byte[] data) {
@@ -38,7 +38,8 @@ public enum SeedType {
 
         // XML / JSON (1 byte)
         if (trimmed.startsWith("<")) return XML;
-        if (trimmed.startsWith("{") || trimmed.startsWith("[")) return JSON;
+        // MJS: { or [ (JavaScript module with JSON-like structure)
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) return MJS;
 
         // LUA: 关键字扫描
         // [修复点]：将 "local " 改为 "local"，并增加 "a="，提高极短种子的识别率
