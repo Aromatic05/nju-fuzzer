@@ -13,17 +13,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * JsonTokenizer 单元测试
+ * MjsTokenizer 单元测试
  */
-class JsonTokenizerTest {
+class MjsTokenizerTest {
 
-    private final JsonTokenizer tokenizer = new JsonTokenizer();
+    private final MjsTokenizer tokenizer = new MjsTokenizer();
 
     @Test
     @DisplayName("Test 1: 简单对象分词")
     void testSimpleObject() {
-        String json = "{\"key\": 123}";
-        List<Token> tokens = tokenizer.tokenize(json.getBytes(StandardCharsets.UTF_8));
+        String mjs = "{\"key\": 123}";
+        List<Token> tokens = tokenizer.tokenize(mjs.getBytes(StandardCharsets.UTF_8));
         
         assertFalse(tokens.isEmpty());
         
@@ -38,8 +38,8 @@ class JsonTokenizerTest {
     @Test
     @DisplayName("Test 2: 简单数组分词")
     void testSimpleArray() {
-        String json = "[1, 2, 3]";
-        List<Token> tokens = tokenizer.tokenize(json.getBytes(StandardCharsets.UTF_8));
+        String mjs = "[1, 2, 3]";
+        List<Token> tokens = tokenizer.tokenize(mjs.getBytes(StandardCharsets.UTF_8));
         
         assertTrue(hasTokenOfType(tokens, Token.Type.LBRACKET));
         assertTrue(hasTokenOfType(tokens, Token.Type.RBRACKET));
@@ -55,8 +55,8 @@ class JsonTokenizerTest {
     @Test
     @DisplayName("Test 3: 字符串带转义")
     void testStringWithEscapes() {
-        String json = "{\"msg\": \"hello\\nworld\\t!\"}";
-        List<Token> tokens = tokenizer.tokenize(json.getBytes(StandardCharsets.UTF_8));
+        String mjs = "{\"msg\": \"hello\\nworld\\t!\"}";
+        List<Token> tokens = tokenizer.tokenize(mjs.getBytes(StandardCharsets.UTF_8));
         
         Optional<Token> strToken = tokens.stream()
             .filter(t -> t.getType() == Token.Type.STRING && t.getValue().contains("hello"))
@@ -69,8 +69,8 @@ class JsonTokenizerTest {
     @Test
     @DisplayName("Test 4: 关键字识别")
     void testKeywords() {
-        String json = "[true, false, null]";
-        List<Token> tokens = tokenizer.tokenize(json.getBytes(StandardCharsets.UTF_8));
+        String mjs = "[true, false, null]";
+        List<Token> tokens = tokenizer.tokenize(mjs.getBytes(StandardCharsets.UTF_8));
         
         assertTrue(hasTokenOfType(tokens, Token.Type.BOOLEAN));
         assertTrue(hasTokenOfType(tokens, Token.Type.NULL));
@@ -85,8 +85,8 @@ class JsonTokenizerTest {
     @Test
     @DisplayName("Test 5: 数字格式 - 整数、小数、科学计数法")
     void testNumberFormats() {
-        String json = "[42, -3.14, 1.5e10, -2E-5]";
-        List<Token> tokens = tokenizer.tokenize(json.getBytes(StandardCharsets.UTF_8));
+        String mjs = "[42, -3.14, 1.5e10, -2E-5]";
+        List<Token> tokens = tokenizer.tokenize(mjs.getBytes(StandardCharsets.UTF_8));
         
         List<String> numbers = new ArrayList<>();
         for (Token t : tokens) {
@@ -104,10 +104,10 @@ class JsonTokenizerTest {
     @DisplayName("Test 6: UTF-8 BOM 检测")
     void testUtf8Bom() {
         byte[] bom = {(byte)0xEF, (byte)0xBB, (byte)0xBF};
-        byte[] json = "{\"a\":1}".getBytes(StandardCharsets.UTF_8);
-        byte[] withBom = new byte[bom.length + json.length];
+        byte[] mjs = "{\"a\":1}".getBytes(StandardCharsets.UTF_8);
+        byte[] withBom = new byte[bom.length + mjs.length];
         System.arraycopy(bom, 0, withBom, 0, bom.length);
-        System.arraycopy(json, 0, withBom, bom.length, json.length);
+        System.arraycopy(mjs, 0, withBom, bom.length, mjs.length);
         
         List<Token> tokens = tokenizer.tokenize(withBom);
         
@@ -119,11 +119,11 @@ class JsonTokenizerTest {
     @DisplayName("Test 7: UTF-16BE BOM 检测")
     void testUtf16BeBom() {
         byte[] bom = {(byte)0xFE, (byte)0xFF};
-        String json = "{\"a\":1}";
-        byte[] jsonBytes = json.getBytes(StandardCharsets.UTF_16BE);
-        byte[] withBom = new byte[bom.length + jsonBytes.length];
+        String mjs = "{\"a\":1}";
+        byte[] mjsBytes = mjs.getBytes(StandardCharsets.UTF_16BE);
+        byte[] withBom = new byte[bom.length + mjsBytes.length];
         System.arraycopy(bom, 0, withBom, 0, bom.length);
-        System.arraycopy(jsonBytes, 0, withBom, bom.length, jsonBytes.length);
+        System.arraycopy(mjsBytes, 0, withBom, bom.length, mjsBytes.length);
         
         List<Token> tokens = tokenizer.tokenize(withBom);
         
@@ -133,8 +133,8 @@ class JsonTokenizerTest {
     @Test
     @DisplayName("Test 8: 空白字符处理")
     void testWhitespace() {
-        String json = "{\n  \"key\" : \t 123 \n}";
-        List<Token> tokens = tokenizer.tokenize(json.getBytes(StandardCharsets.UTF_8));
+        String mjs = "{\n  \"key\" : \t 123 \n}";
+        List<Token> tokens = tokenizer.tokenize(mjs.getBytes(StandardCharsets.UTF_8));
         
         // 空白可能被保留为 WHITESPACE token，也可能被跳过
         // 关键是核心 token 都在
@@ -147,8 +147,8 @@ class JsonTokenizerTest {
     @Test
     @DisplayName("Test 9: 嵌套结构")
     void testNestedStructure() {
-        String json = "{\"obj\": {\"arr\": [1, 2]}}";
-        List<Token> tokens = tokenizer.tokenize(json.getBytes(StandardCharsets.UTF_8));
+        String mjs = "{\"obj\": {\"arr\": [1, 2]}}";
+        List<Token> tokens = tokenizer.tokenize(mjs.getBytes(StandardCharsets.UTF_8));
         
         // 应该有2个 { 和 2个 }
         long openBraceCount = tokens.stream()
@@ -165,8 +165,8 @@ class JsonTokenizerTest {
     @Test
     @DisplayName("Test 10: 容错 - 不完整的字符串")
     void testIncompleteString() {
-        String json = "{\"unterminated";
-        List<Token> tokens = tokenizer.tokenize(json.getBytes(StandardCharsets.UTF_8));
+        String mjs = "{\"unterminated";
+        List<Token> tokens = tokenizer.tokenize(mjs.getBytes(StandardCharsets.UTF_8));
         
         // 应该仍能分词，不会崩溃
         assertFalse(tokens.isEmpty());
@@ -175,8 +175,8 @@ class JsonTokenizerTest {
     @Test
     @DisplayName("Test 11: 容错 - 非法字符")
     void testIllegalCharacters() {
-        String json = "{\"key\": @#$%}";
-        List<Token> tokens = tokenizer.tokenize(json.getBytes(StandardCharsets.UTF_8));
+        String mjs = "{\"key\": @#$%}";
+        List<Token> tokens = tokenizer.tokenize(mjs.getBytes(StandardCharsets.UTF_8));
         
         // 应该包含 UNKNOWN 或 RAW token
         assertFalse(tokens.isEmpty());
@@ -185,8 +185,8 @@ class JsonTokenizerTest {
     @Test
     @DisplayName("Test 12: 构建树")
     void testBuildTree() {
-        String json = "{\"a\": [1, 2]}";
-        List<Token> tokens = tokenizer.tokenize(json.getBytes(StandardCharsets.UTF_8));
+        String mjs = "{\"a\": [1, 2]}";
+        List<Token> tokens = tokenizer.tokenize(mjs.getBytes(StandardCharsets.UTF_8));
         TokenNode tree = tokenizer.buildTree(tokens);
         
         assertNotNull(tree);
@@ -197,8 +197,8 @@ class JsonTokenizerTest {
     @Test
     @DisplayName("Test 13: 完整解析流程")
     void testParse() {
-        String json = "[true, null]";
-        TokenNode tree = tokenizer.parse(json.getBytes(StandardCharsets.UTF_8));
+        String mjs = "[true, null]";
+        TokenNode tree = tokenizer.parse(mjs.getBytes(StandardCharsets.UTF_8));
         
         assertNotNull(tree);
         String serialized = tree.serialize();
