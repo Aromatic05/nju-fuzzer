@@ -5,9 +5,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * JSON 容错分词器
+ * MJS 容错分词器
  * 
- * 识别 JSON 的基本结构：
+ * 识别 MJS 的基本结构：
  * - 界定符: { } [ ] , :
  * - 字符串: "..." 或 '...'（非标准但常见）
  * - 数字: 整数、浮点数、科学计数法
@@ -16,7 +16,7 @@ import java.util.List;
  * 
  * 容错策略：无法识别的字符标记为 UNKNOWN，不中断解析
  */
-public class JsonTokenizer implements Tokenizer {
+public class MjsTokenizer implements Tokenizer {
 
     @Override
     public List<Token> tokenize(byte[] input) {
@@ -105,7 +105,7 @@ public class JsonTokenizer implements Tokenizer {
                 continue;
             }
 
-            // 注释 (非标准，但某些 JSON 解析器支持)
+            // 注释 (非标准，但某些 MJS 解析器支持)
             if (c == '/') {
                 if (pos + 1 < len) {
                     char next = text.charAt(pos + 1);
