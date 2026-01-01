@@ -46,7 +46,7 @@ public class MutatorFactory {
         switch (type) {
             // --- 文本类 ---
             case XML:   return new XmlMutator();
-            case JSON:  return new JsonMutator();
+            case MJS:   return new MjsMutator();
             case LUA:   return new LuaMutator();
             case CXX:   return new CxxMutator();
 
