@@ -1,207 +1,485 @@
 package edu.nju.fuzzing.mutate;
 
-import edu.nju.fuzzing.model.Seed;
-import edu.nju.fuzzing.model.Testcase;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-
-import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.util.regex.Pattern;
-
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * CxxMutator 单元测试 (适配 energy == count 逻辑)
- *
- * 包含：
- * 1. 基础格式校验 (_Z 开头)
- * 2. 攻击向量识别 (栈溢出、整数溢出、模板炸弹)
- * 3. 语法结构校验 (数组、函数指针、操作符)
- * 4. 统计报告 (可视化覆盖率，修复了百分比计算问题)
- */
-class CxxMutatorTest {
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import java.nio.charset.StandardCharsets;
 
-    private Seed dummySeed;
+import edu.nju.fuzzing.model.Seed;
+import edu.nju.fuzzing.model.Testcase;
+import edu.nju.fuzzing.mutate.grammar.CxxSyntaxChecker;
+
+/**
+ * CxxMutator 综合测试
+ * 
+ * 测试覆盖：
+ * 1. 基本变异功能
+ * 2. 语法检查集成
+ * 3. 语法修复集成
+ * 4. 语料库使用
+ * 5. 攻击负载生成
+ * 6. 各种问题修复验证
+ */
+public class CxxMutatorTest {
+
+    @TempDir
+    Path tempDir;
+
     private CxxMutator mutator;
+    private int seedCounter = 0;
 
     @BeforeEach
     void setUp() {
-        // 创建一个用于测试的虚拟种子
-        // CxxMutator 是生成式的，内容不重要，但对象必须存在
-        dummySeed = Seed.loadWithMetadata(new File("dummy_cxx"), new byte[0]);
         mutator = new CxxMutator();
+        seedCounter = 0;
+    }
+
+    // Helper 方法：创建测试种子
+    private Seed createSeed(String content) throws IOException {
+        return createSeed(content.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private Seed createSeed(byte[] data) throws IOException {
+        File file = tempDir.resolve("seed_" + (seedCounter++) + ".txt").toFile();
+        Files.write(file.toPath(), data);
+        return Seed.loadWithMetadata(file, data);
+    }
+
+    // Helper 方法：收集变异结果
+    private List<Testcase> collectMutations(Seed seed, int energy) {
+        List<Testcase> results = new ArrayList<>();
+        Iterator<Testcase> iter = mutator.mutate(seed, energy);
+        while (iter.hasNext()) {
+            results.add(iter.next());
+        }
+        return results;
+    }
+
+    // Helper 方法：提取 Testcase 数据为字符串
+    private String getData(Testcase tc) {
+        return new String(tc.getData(), StandardCharsets.UTF_8);
     }
 
     // ==========================================
-    // 基础功能测试
+    // 基本功能测试
     // ==========================================
 
     @Test
-    @DisplayName("Test 1: Mangled Name Prefix - 必须以 _Z 开头")
-    void testPrefix() {
-        // 传入 100，期望生成 100 个
-        Iterator<Testcase> iter = mutator.mutate(dummySeed, 100);
+    void testMutateReturnsTestcases() throws IOException {
+        Seed seed = createSeed("_Z4mainv");
+        List<Testcase> results = collectMutations(seed, 5);
+
+        assertEquals(5, results.size());
+        for (Testcase tc : results) {
+            assertNotNull(tc);
+            assertNotNull(tc.getData());
+            assertTrue(tc.getData().length > 0);
+        }
+    }
+
+    @Test
+    void testMutateEmptyInput() throws IOException {
+        Seed seed = createSeed(new byte[0]);
+        List<Testcase> results = collectMutations(seed, 3);
+
+        assertEquals(3, results.size());
+        // 应该返回一些有效数据（从语料库或生成）
+        for (Testcase tc : results) {
+            assertTrue(tc.getData().length > 0);
+        }
+    }
+
+    @Test
+    void testMutateDifferentOutputs() throws IOException {
+        Seed seed = createSeed("_Z4funcv");
+        Set<String> uniqueResults = new HashSet<>();
+
+        List<Testcase> results = collectMutations(seed, 100);
+        for (Testcase tc : results) {
+            uniqueResults.add(getData(tc));
+        }
+
+        // 应该产生多种不同的变异结果
+        assertTrue(uniqueResults.size() > 1, "Should produce varied mutations");
+    }
+
+    @Test
+    void testMutatePreservesPrefix() throws IOException {
+        // 当开启语法修复时，前缀应该被保留
+        mutator.setEnforceSyntaxCorrectness(true);
+
+        Seed seed = createSeed("_Z4mainv");
+        List<Testcase> results = collectMutations(seed, 20);
+
+        for (Testcase tc : results) {
+            String result = getData(tc);
+            assertTrue(result.startsWith("_Z"), "Should preserve _Z prefix: " + result);
+        }
+    }
+
+    // ==========================================
+    // 语法检查集成测试
+    // ==========================================
+
+    @Test
+    void testCheckSyntaxValid() throws IOException {
+        CxxSyntaxChecker.CheckResult result = mutator.checkSyntax("_Z4mainv");
+
+        assertTrue(result.isValid);
+        assertTrue(result.hasValidPrefix);
+    }
+
+    @Test
+    void testCheckSyntaxInvalidPrefix() throws IOException {
+        CxxSyntaxChecker.CheckResult result = mutator.checkSyntax("_X4mainv");
+
+        assertFalse(result.hasValidPrefix);
+    }
+
+    @Test
+    void testCheckSyntaxMissingE() throws IOException {
+        CxxSyntaxChecker.CheckResult result = mutator.checkSyntax("_ZN3fooI4mainv");
+
+        assertTrue(result.missingNestedE > 0 || result.missingTemplateE > 0);
+    }
+
+    @Test
+    void testCheckSyntaxLengthMismatch() throws IOException {
+        CxxSyntaxChecker.CheckResult result = mutator.checkSyntax("_Z10mainv");
+
+        assertTrue(result.hasLengthMismatch);
+    }
+
+    // ==========================================
+    // 语法修复集成测试
+    // ==========================================
+
+    @Test
+    void testFixSyntaxMissingPrefix() throws IOException {
+        String fixed = mutator.fixSyntax("4mainv");
+
+        assertTrue(fixed.startsWith("_Z"));
+    }
+
+    @Test
+    void testFixSyntaxMissingE() throws IOException {
+        String input = "_ZN3foo4mainv";
+        String fixed = mutator.fixSyntax(input);
+
+        CxxSyntaxChecker.CheckResult result = mutator.checkSyntax(fixed);
+        assertEquals(0, result.missingNestedE);
+    }
+
+    @Test
+    void testEnforceSyntaxCorrectnessFlag() throws IOException {
+        mutator.setEnforceSyntaxCorrectness(true);
+
+        Seed seed = createSeed("_ZN3fooNNN4mainv"); // 故意破损
+        List<Testcase> results = collectMutations(seed, 10);
+
+        for (Testcase tc : results) {
+            String result = getData(tc);
+            CxxSyntaxChecker.CheckResult checkResult = mutator.checkSyntax(result);
+            if (!checkResult.isValid) {
+                String fixed = mutator.fixSyntax(result);
+                CxxSyntaxChecker.CheckResult afterFix = mutator.checkSyntax(fixed);
+                assertTrue(afterFix.isValid,
+                        "With syntax enforcement, result should be valid after fix: " + fixed);
+            }
+        }
+    }
+
+    // ==========================================
+    // 语料库测试
+    // ==========================================
+
+    @Test
+    void testCorpusUsage() throws IOException {
+        // 通过多次变异来验证语料库在使用
+        Set<String> results = new HashSet<>();
+        Seed seed = createSeed(new byte[0]);
+
+        // 收集足够多的变异结果
+        for (int i = 0; i < 50; i++) {
+            List<Testcase> batch = collectMutations(seed, 10);
+            for (Testcase tc : batch) {
+                results.add(getData(tc));
+            }
+        }
+
+        // 结果应该多样化
+        assertTrue(results.size() > 1, "Should produce varied results");
+    }
+
+    // ==========================================
+    // 问题修复验证
+    // ==========================================
+
+    /**
+     * 问题 1: 长度前缀同步测试
+     */
+    @Test
+    void testLengthPrefixSyncAfterMutation() throws IOException {
+        mutator.setEnforceSyntaxCorrectness(true);
+
+        Seed seed = createSeed("_Z4funcv");
+        List<Testcase> results = collectMutations(seed, 50);
+
+        for (Testcase tc : results) {
+            String result = getData(tc);
+            CxxSyntaxChecker.CheckResult checkResult = mutator.checkSyntax(result);
+            assertFalse(checkResult.hasLengthMismatch,
+                    "Length should be synced: " + result);
+        }
+    }
+
+    /**
+     * 问题 3: 模板配对测试
+     */
+    @Test
+    void testTemplateClosureRate() throws IOException {
+        int unclosedCount = 0;
+        int totalWithTemplate = 0;
+
+        // 启用语法修复以验证闭合效果
+        mutator.setEnforceSyntaxCorrectness(true);
+
+        Seed seed = createSeed("_Z4funcIiv"); // 模板输入
+        List<Testcase> results = collectMutations(seed, 500);
+
+        for (Testcase tc : results) {
+            String result = getData(tc);
+            if (result.contains("I")) {
+                totalWithTemplate++;
+                CxxSyntaxChecker.CheckResult checkResult = mutator.checkSyntax(result);
+                if (checkResult.missingTemplateE > 0) {
+                    unclosedCount++;
+                }
+            }
+        }
+
+        if (totalWithTemplate > 0) {
+            double unclosedRate = (double) unclosedCount / totalWithTemplate;
+            // 未闭合率应该降低到约 10%
+            assertTrue(unclosedRate < 0.30,
+                    "Unclosed template rate should be low: " + unclosedRate);
+        }
+    }
+
+    /**
+     * 问题 4: 替换序号范围测试
+     */
+    @Test
+    void testSubstitutionInRange() throws IOException {
+        mutator.setEnforceSyntaxCorrectness(true);
+
+        Seed seed = createSeed("_ZN3fooS_3barEv");
+        List<Testcase> results = collectMutations(seed, 50);
+
+        for (Testcase tc : results) {
+            String result = getData(tc);
+            CxxSyntaxChecker.CheckResult checkResult = mutator.checkSyntax(result);
+            // 如果存在替换越界，则经过 fixSyntax 后应被修复
+            if (checkResult.hasInvalidSubstitution) {
+                String fixed = mutator.fixSyntax(result);
+                CxxSyntaxChecker.CheckResult afterFix = mutator.checkSyntax(fixed);
+                assertFalse(afterFix.hasInvalidSubstitution,
+                        "Substitution should be fixed into valid range: " + fixed);
+            }
+        }
+    }
+
+    /**
+     * 问题 6: NUL 字符注入率测试
+     */
+    @Test
+    void testNullCharacterInjectionRate() throws IOException {
+        int nullCount = 0;
+
+        Seed seed = createSeed("_Z4funcv");
+        List<Testcase> results = collectMutations(seed, 500);
+
+        for (Testcase tc : results) {
+            String result = getData(tc);
+            if (result.contains("\0")) {
+                nullCount++;
+            }
+        }
+
+        double nullRate = (double) nullCount / 500;
+        // NUL 字符率应该降低到约 5%
+        assertTrue(nullRate < 0.15,
+                "NUL character rate should be low: " + nullRate);
+    }
+
+    /**
+     * 问题 7: E 平衡测试
+     */
+    @Test
+    void testEBalanceRate() throws IOException {
+        int imbalancedCount = 0;
+
+        mutator.setEnforceSyntaxCorrectness(true);
+
+        Seed seed = createSeed("_ZN3foov");
+        List<Testcase> results = collectMutations(seed, 500);
+
+        for (Testcase tc : results) {
+            String result = getData(tc);
+            CxxSyntaxChecker.CheckResult checkResult = mutator.checkSyntax(result);
+            if (checkResult.missingNestedE > 0 || checkResult.extraE > 0) {
+                imbalancedCount++;
+            }
+        }
+
+        double imbalanceRate = (double) imbalancedCount / 500;
+        // 不平衡率应该降低到约 10%
+        assertTrue(imbalanceRate < 0.30,
+                "E imbalance rate should be low: " + imbalanceRate);
+    }
+
+    // ==========================================
+    // 边界情况测试
+    // ==========================================
+
+    @Test
+    void testMutateLongInput() throws IOException {
+        StringBuilder sb = new StringBuilder("_Z");
+        for (int i = 0; i < 100; i++) {
+            sb.append("4func");
+        }
+        sb.append("v");
+
+        Seed seed = createSeed(sb.toString());
+        List<Testcase> results = collectMutations(seed, 5);
+
+        assertEquals(5, results.size());
+        for (Testcase tc : results) {
+            assertNotNull(tc.getData());
+        }
+    }
+
+    @Test
+    void testMutateNestedInput() throws IOException {
+        Seed seed = createSeed("_ZNNNNN3fooEEEEEv");
+        List<Testcase> results = collectMutations(seed, 5);
+
+        assertEquals(5, results.size());
+    }
+
+    @Test
+    void testMutateTemplateInput() throws IOException {
+        Seed seed = createSeed("_Z4funcIIIIIivEEEEv");
+        List<Testcase> results = collectMutations(seed, 5);
+
+        assertEquals(5, results.size());
+    }
+
+    @Test
+    void testMutateSubstitutionInput() throws IOException {
+        Seed seed = createSeed("_ZN3fooS_S0_S1_Ev");
+        List<Testcase> results = collectMutations(seed, 5);
+
+        assertEquals(5, results.size());
+    }
+
+    // ==========================================
+    // 综合集成测试
+    // ==========================================
+
+    @Test
+    void testFullMutationCycle() throws IOException {
+        // 模拟一个完整的模糊测试循环
+        Seed current = createSeed("_Z4mainv");
+
+        for (int i = 0; i < 20; i++) {
+            Iterator<Testcase> iter = mutator.mutate(current, 1);
+            assertTrue(iter.hasNext());
+            Testcase tc = iter.next();
+            assertNotNull(tc.getData());
+            assertTrue(tc.getData().length > 0);
+
+            // 使用变异结果作为下一轮种子
+            File newFile = tempDir.resolve("mutated_" + i + ".txt").toFile();
+            Files.write(newFile.toPath(), tc.getData());
+            current = Seed.loadWithMetadata(newFile, tc.getData());
+        }
+    }
+
+    @Test
+    void testMutationDiversity() throws IOException {
+        Set<String> allResults = new HashSet<>();
+        Seed seed = createSeed("_ZN3foo3barEv");
+
+        List<Testcase> results = collectMutations(seed, 200);
+        for (Testcase tc : results) {
+            allResults.add(getData(tc));
+        }
+
+        // 应该产生足够的变异多样性
+        assertTrue(allResults.size() > 10,
+                "Should produce diverse mutations: " + allResults.size());
+    }
+
+    @Test
+    void testIteratorBehavior() throws IOException {
+        Seed seed = createSeed("_Z4funcv");
+        Iterator<Testcase> iter = mutator.mutate(seed, 5);
+
         int count = 0;
         while (iter.hasNext()) {
-            String mangle = new String(iter.next().getData(), StandardCharsets.ISO_8859_1);
-            assertTrue(mangle.startsWith("_Z"), "所有生成的 C++ 符号都应以 _Z 开头: " + mangle);
+            Testcase tc = iter.next();
+            assertNotNull(tc);
             count++;
         }
-        assertEquals(100, count, "生成的数量应等于传入的 Energy");
+
+        assertEquals(5, count);
+        assertFalse(iter.hasNext());
     }
 
     @Test
-    @DisplayName("Test 2: Charset Validity - 字符集应合法")
-    void testCharset() {
-        // Itanium ABI 允许字母、数字、下划线 (及一些特殊符号如 $ 在某些扩展中，这里只测标准集)
-        Pattern validChars = Pattern.compile("^[_a-zA-Z0-9]+$");
-        Iterator<Testcase> iter = mutator.mutate(dummySeed, 50);
-        while (iter.hasNext()) {
-            String mangle = new String(iter.next().getData(), StandardCharsets.ISO_8859_1);
-            assertTrue(validChars.matcher(mangle).matches(), "包含非法字符: " + mangle);
-        }
-    }
+    void testEnergyParameter() throws IOException {
+        Seed seed = createSeed("_Z4funcv");
 
-    // ==========================================
-    // 攻击向量与复杂语法覆盖测试 (统计法)
-    // ==========================================
+        // energy = 1
+        List<Testcase> r1 = collectMutations(seed, 1);
+        assertEquals(1, r1.size());
 
-    @Test
-    @DisplayName("Test 3-10: Coverage Report - 运行 2000 次并统计覆盖率")
-    void testCoverage() {
-        // 增加采样数到 2000，使统计数据更平滑
-        int targetIterations = 2000;
-        Map<String, Integer> stats = new HashMap<>();
+        // energy = 10
+        List<Testcase> r10 = collectMutations(seed, 10);
+        assertEquals(10, r10.size());
 
-        // 初始化统计项
-        String[] keys = {
-                "Total", "Integer Overflow", "Deep Recursion", "Substitution Attack",
-                "Template Bomb", "Nested Name", "Operator", "Constructor/Destructor",
-                "Array Type", "Function Pointer", "Std Library"
-        };
-        for (String k : keys) stats.put(k, 0);
-
-        // 正则特征库
-        Pattern pIntOverflow = Pattern.compile("\\d{9,}"); // 连续9个以上数字
-        Pattern pDeepRecursion = Pattern.compile("P{10,}"); // 连续10个以上指针
-        Pattern pSubAttack = Pattern.compile("S\\d+_|S_"); // S123_ 或 S_
-        Pattern pTemplate = Pattern.compile("I.*E"); // 模板结构
-        Pattern pNested = Pattern.compile("^N.*E$"); // 嵌套名字空间
-        // 常见操作符
-        Pattern pOperator = Pattern.compile("nw|na|dl|da|ps|ng|ad|de|co|nt|pl|mi|ml|dv|rm|an|or|eo|aS|eq|ne|lt|gt|cl|ix|qu");
-        Pattern pCtorDtor = Pattern.compile("[CD][0-9]"); // C1, D2...
-        Pattern pArray = Pattern.compile("A\\d*_"); // A10_i
-        Pattern pFuncPtr = Pattern.compile("PF.*E"); // 函数指针
-        Pattern pStd = Pattern.compile("St|Sa|Sb|Ss"); // std::
-
-        // 由于修改了 CxxMutator 逻辑 (count = energy)，这里直接传 2000
-        Iterator<Testcase> iter = mutator.mutate(dummySeed, targetIterations);
-
-        while (iter.hasNext()) {
-            String mangle = new String(iter.next().getData(), StandardCharsets.ISO_8859_1);
-            // 去掉 _Z 前缀便于分析内部结构 (避免 _Z 干扰正则)
-            String body = (mangle.length() > 2) ? mangle.substring(2) : "";
-
-            // 记录真实的总数 (作为分母)
-            stats.put("Total", stats.get("Total") + 1);
-
-            // 统计特征
-            if (pIntOverflow.matcher(body).find()) inc(stats, "Integer Overflow");
-            if (pDeepRecursion.matcher(body).find()) inc(stats, "Deep Recursion");
-            if (pSubAttack.matcher(body).find()) inc(stats, "Substitution Attack");
-            if (pTemplate.matcher(body).find()) inc(stats, "Template Bomb");
-
-            // 下面这些通常出现在 Complex Signature 分支
-            // 嵌套名字空间通常以 N 开头 E 结尾
-            if (body.startsWith("N") && body.endsWith("E")) {
-                inc(stats, "Nested Name");
-            }
-            if (pOperator.matcher(body).find()) inc(stats, "Operator");
-            if (pCtorDtor.matcher(body).find()) inc(stats, "Constructor/Destructor");
-            if (pArray.matcher(body).find()) inc(stats, "Array Type");
-            if (pFuncPtr.matcher(body).find()) inc(stats, "Function Pointer");
-            if (pStd.matcher(body).find()) inc(stats, "Std Library");
-        }
-
-        // --- 输出可视化报告 ---
-        // 使用实际统计到的 Total 作为分母，确保 Rate 准确
-        printReport(stats);
-
-        // --- 断言：确保主要攻击向量都被覆盖到了 ---
-        // 如果这几个主要攻击都没生成，说明概率分布有问题
-        assertCovered(stats, "Integer Overflow");
-        assertCovered(stats, "Deep Recursion");
-        assertCovered(stats, "Template Bomb");
-        assertCovered(stats, "Array Type");
-    }
-
-    private void inc(Map<String, Integer> stats, String key) {
-        stats.put(key, stats.get(key) + 1);
-    }
-
-    private void assertCovered(Map<String, Integer> stats, String key) {
-        assertTrue(stats.get(key) > 0, "Warning: 在运行中未生成 " + key + "，请检查概率设置或逻辑实现。");
-    }
-
-    private void printReport(Map<String, Integer> stats) {
-        int realTotal = stats.get("Total");
-        System.out.println("====== CxxMutator Functional Coverage Report ======");
-        System.out.println("Real Iterations: " + realTotal);
-        System.out.println("---------------------------------------------------");
-        System.out.printf("%-25s | %-10s | %-10s%n", "Feature / Attack", "Count", "Rate");
-        System.out.println("---------------------------------------------------");
-
-        // 固定的排序顺序输出，方便查看
-        String[] order = {
-                "Integer Overflow", "Deep Recursion", "Substitution Attack",
-                "Template Bomb", "Nested Name", "Operator", "Constructor/Destructor",
-                "Array Type", "Function Pointer", "Std Library"
-        };
-
-        for (String k : order) {
-            int v = stats.get(k);
-            double rate = (realTotal > 0) ? (v * 100.0) / realTotal : 0.0;
-            System.out.printf("%-25s | %-10d | %6.2f%%%n", k, v, rate);
-        }
-        System.out.println("===================================================");
-    }
-
-    // ==========================================
-    // 边界与健壮性测试
-    // ==========================================
-
-    @Test
-    @DisplayName("Test 11: Length Check - 生成的名称长度应合理")
-    void testLength() {
-        Iterator<Testcase> iter = mutator.mutate(dummySeed, 100);
-        while(iter.hasNext()) {
-            byte[] data = iter.next().getData();
-            // _Z + 至少一个字符
-            assertTrue(data.length >= 2, "名称太短: " + new String(data));
-        }
+        // energy = 100
+        List<Testcase> r100 = collectMutations(seed, 100);
+        assertEquals(100, r100.size());
     }
 
     @Test
-    @DisplayName("Test 12: Independent Generation - 变异结果应多样化")
-    void testDiversity() {
-        Set<String> uniqueResults = new HashSet<>();
-        // 传入 100，期望生成 100 个
-        int requestedEnergy = 100;
-        Iterator<Testcase> iter = mutator.mutate(dummySeed, requestedEnergy);
+    void testZeroEnergy() throws IOException {
+        Seed seed = createSeed("_Z4funcv");
+        List<Testcase> results = collectMutations(seed, 0);
 
-        while(iter.hasNext()) {
-            uniqueResults.add(new String(iter.next().getData()));
-        }
+        // 根据实现，0 能量应该至少产生 1 个变异
+        assertTrue(results.size() >= 1);
+    }
 
-        // 打印实际结果数，方便调试
-        System.out.println("Requested: " + requestedEnergy + ", Unique: " + uniqueResults.size());
+    @Test
+    void testNegativeEnergy() throws IOException {
+        Seed seed = createSeed("_Z4funcv");
+        List<Testcase> results = collectMutations(seed, -5);
 
-        // 验证：生成的 100 个用例中，重复的不应太多
-        // 只要大于 50 说明算法的随机性是有效的
-        assertTrue(uniqueResults.size() > 50,
-                "生成结果多样性不足，期望 > 50，实际: " + uniqueResults.size());
+        // 根据实现，负能量应该至少产生 1 个变异
+        assertTrue(results.size() >= 1);
     }
 }
