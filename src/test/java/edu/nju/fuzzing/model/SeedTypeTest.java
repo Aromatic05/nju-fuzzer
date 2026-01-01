@@ -69,9 +69,9 @@ class SeedTypeTest {
     @DisplayName("JSON: 对象与数组")
     void testJson() {
         // 对象
-        Assertions.assertEquals(SeedType.JSON, SeedType.detect("{\"key\": \"val\"}".getBytes()));
+        Assertions.assertEquals(SeedType.MJS, SeedType.detect("{\"key\": \"val\"}".getBytes()));
         // 数组
-        Assertions.assertEquals(SeedType.JSON, SeedType.detect("[1, 2, 3]".getBytes()));
+        Assertions.assertEquals(SeedType.MJS, SeedType.detect("[1, 2, 3]".getBytes()));
     }
 
     @Test
@@ -102,8 +102,8 @@ class SeedTypeTest {
     @DisplayName("Short: 极短 JSON (2字节)")
     void testShortJson() {
         // 之前如果有 length < 4 的检查，这里会失败
-        Assertions.assertEquals(SeedType.JSON, SeedType.detect("{}".getBytes()));
-        Assertions.assertEquals(SeedType.JSON, SeedType.detect("[]".getBytes()));
+        Assertions.assertEquals(SeedType.MJS, SeedType.detect("{}".getBytes()));
+        Assertions.assertEquals(SeedType.MJS, SeedType.detect("[]".getBytes()));
     }
 
     @Test
@@ -136,7 +136,7 @@ class SeedTypeTest {
         // XML 带空格
         Assertions.assertEquals(SeedType.XML, SeedType.detect("  <doc>".getBytes()));
         // JSON 带换行
-        Assertions.assertEquals(SeedType.JSON, SeedType.detect("\n\t{\"a\":1}".getBytes()));
+        Assertions.assertEquals(SeedType.MJS, SeedType.detect("\n\t{\"a\":1}".getBytes()));
     }
 
     // ==========================================
