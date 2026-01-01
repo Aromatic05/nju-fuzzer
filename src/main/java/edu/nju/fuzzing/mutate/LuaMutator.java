@@ -19,7 +19,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class LuaMutator implements Mutator {
 
     private static final int MAX_DEPTH = 15;
-    private static final String[] VARS = {"a", "b", "c", "t", "u", "f", "co", "m"};
+    private static final String[] VARS = { "a", "b", "c", "t", "u", "f", "co", "m" };
 
     private static final String[] ATTACK_PAYLOADS = {
             "string.find(string.rep('a', 10000), string.rep('a?', 10000) .. 'a')",
@@ -30,7 +30,7 @@ public class LuaMutator implements Mutator {
     };
 
     private static final String[] INJECTION_PAYLOADS = {
-            "\\0",
+            "\\000",
             "%s%s%s%s",
             "../../../etc/passwd",
             "$(id)",
@@ -40,20 +40,34 @@ public class LuaMutator implements Mutator {
     };
 
     private static final String[][] KEYWORD_REPLACEMENTS = {
-            {"local", ""},
-            {"local", "global"},
-            {"function", "func"},
-            {"end", ""},
-            {"then", ""},
-            {"do", ""},
-            {"==", "="},
-            {"~=", "!="},
-            {"and", "&"},
-            {"or", "|"},
-            {"not", "!"},
+            // 安全的同类关键字替换
+            { "and", "or" },
+            { "or", "and" },
+            { "==", "~=" },
+            { "~=", "==" },
+            { "<", ">" },
+            { ">", "<" },
+            { "<=", ">=" },
+            { ">=", "<=" },
+            { "true", "false" },
+            { "false", "true" },
+            { "break", "return" },
+            { "while", "repeat" },
     };
 
+    // 区分一元和二元运算符
+    private static final String[] BINARY_OPS = {
+            "+", "-", "*", "/", "%", "^", "..", "==", "~=",
+            "<", ">", "<=", ">=", "and", "or", "//", "&", "|", "~", "<<", ">>"
+    };
+    private static final String[] UNARY_OPS = { "not", "-", "#", "~" };
+
     private final LuaTokenizer tokenizer = new LuaTokenizer();
+    private final LuaSyntaxChecker syntaxChecker = new LuaSyntaxChecker();
+    private final LuaSyntaxFixer syntaxFixer = new LuaSyntaxFixer();
+
+    // 变异重试次数
+    private static final int MAX_MUTATION_RETRIES = 3;
 
     @Override
     public Iterator<Testcase> mutate(Seed seed, int energy) {
@@ -69,7 +83,8 @@ public class LuaMutator implements Mutator {
 
             @Override
             public Testcase next() {
-                if (remaining <= 0) throw new NoSuchElementException();
+                if (remaining <= 0)
+                    throw new NoSuchElementException();
                 remaining--;
 
                 ThreadLocalRandom rand = ThreadLocalRandom.current();
@@ -105,62 +120,85 @@ public class LuaMutator implements Mutator {
             return generateChunk(rand).getBytes(StandardCharsets.UTF_8);
         }
 
-        TokenNode tree = tokenizer.buildTree(tokens);
+        // 变异-验证-重试循环
+        for (int retry = 0; retry < MAX_MUTATION_RETRIES; retry++) {
+            TokenNode tree = tokenizer.buildTree(tokens);
 
-        int mutationCount = 1 + rand.nextInt(3);
-        for (int i = 0; i < mutationCount; i++) {
-            int mutationType = rand.nextInt(10);
-            
-            switch (mutationType) {
-                case 0:
-                    replaceKeywords(tree, rand);
-                    break;
-                case 1:
-                    mutateOperators(tree, rand);
-                    break;
-                case 2:
-                    mutateStrings(tree, rand);
-                    break;
-                case 3:
-                    MutationStrategy.mutateNumbers(tree, rand);
-                    break;
-                case 4:
-                    MutationStrategy.deleteNodes(tree, 0.1, rand);
-                    break;
-                case 5:
-                    MutationStrategy.swapNodes(tree, rand);
-                    break;
-                case 6:
-                    MutationStrategy.duplicateSubtree(tree, 1 + rand.nextInt(3), rand);
-                    break;
-                case 7:
-                    insertRandomStatement(tree, rand);
-                    break;
-                case 8:
-                    mutateIdentifiers(tree, rand);
-                    break;
-                default:
-                    injectGarbageCollection(tree, rand);
-                    break;
+            int mutationCount = 1 + rand.nextInt(3);
+            for (int i = 0; i < mutationCount; i++) {
+                int mutationType = rand.nextInt(10);
+
+                switch (mutationType) {
+                    case 0:
+                        replaceKeywords(tree, rand);
+                        break;
+                    case 1:
+                        mutateOperators(tree, rand);
+                        break;
+                    case 2:
+                        mutateStrings(tree, rand);
+                        break;
+                    case 3:
+                        MutationStrategy.mutateNumbers(tree, rand);
+                        break;
+                    case 4:
+                        MutationStrategy.deleteNodes(tree, 0.1, rand);
+                        break;
+                    case 5:
+                        MutationStrategy.swapNodes(tree, rand);
+                        break;
+                    case 6:
+                        MutationStrategy.duplicateSubtree(tree, 1 + rand.nextInt(3), rand);
+                        break;
+                    case 7:
+                        insertRandomStatement(tree, rand);
+                        break;
+                    case 8:
+                        mutateIdentifiers(tree, rand);
+                        break;
+                    default:
+                        injectGarbageCollection(tree, rand);
+                        break;
+                }
             }
+
+            String result;
+            if (rand.nextInt(20) == 0) {
+                // 5% 概率故意生成不完整的代码（用于测试解析器健壮性）
+                result = tree.serializeWithMissingClose(rand, 0.2);
+            } else {
+                result = tree.serialize();
+
+                // 语法检查
+                LuaSyntaxChecker.CheckResult checkResult = syntaxChecker.check(result);
+
+                if (!checkResult.isValid) {
+                    // 尝试修复
+                    String fixed = syntaxFixer.quickFix(result);
+                    if (fixed != null) {
+                        result = fixed;
+                    } else if (retry < MAX_MUTATION_RETRIES - 1) {
+                        // 修复失败，重试变异
+                        continue;
+                    }
+                    // 最后一次尝试，即使无法修复也返回
+                }
+            }
+
+            return result.getBytes(StandardCharsets.UTF_8);
         }
 
-        String result;
-        if (rand.nextInt(20) == 0) {
-            result = tree.serializeWithMissingClose(rand, 0.2);
-        } else {
-            result = tree.serialize();
-        }
-
-        return result.getBytes(StandardCharsets.UTF_8);
+        // 所有重试都失败，返回原始数据
+        return seedData;
     }
 
     private void replaceKeywords(TokenNode tree, ThreadLocalRandom rand) {
         List<TokenNode> leaves = tree.collectLeaves();
         for (TokenNode leaf : leaves) {
-            if (leaf.getToken() == null) continue;
+            if (leaf.getToken() == null)
+                continue;
             Token token = leaf.getToken();
-            
+
             if (token.getType() == Token.Type.KEYWORD || token.getType() == Token.Type.OPERATOR) {
                 for (String[] pair : KEYWORD_REPLACEMENTS) {
                     if (pair[0].equals(token.getValue()) && rand.nextInt(4) == 0) {
@@ -173,17 +211,49 @@ public class LuaMutator implements Mutator {
     }
 
     private void mutateOperators(TokenNode tree, ThreadLocalRandom rand) {
-        String[] operators = {"+", "-", "*", "/", "%", "^", "..", "==", "~=", "<", ">", "<=", ">=", "and", "or", "not", "//", "&", "|", "~", "<<", ">>"};
-        
+        // 不再混合一元和二元运算符，只使用二元运算符进行替换
+
         List<TokenNode> leaves = tree.collectLeaves();
         for (TokenNode leaf : leaves) {
             if (leaf.getToken() != null && leaf.getToken().getType() == Token.Type.OPERATOR) {
                 if (rand.nextInt(5) == 0) {
-                    String newOp = operators[rand.nextInt(operators.length)];
+                    String currentOp = leaf.getToken().getValue();
+                    // 判断当前是一元还是二元运算符，只替换为同类型
+                    boolean isUnary = isUnaryOperator(currentOp, leaf);
+                    String[] pool = isUnary ? UNARY_OPS : BINARY_OPS;
+                    String newOp = pool[rand.nextInt(pool.length)];
                     replaceTokenValue(leaf, newOp);
                 }
             }
         }
+    }
+
+    private boolean isUnaryOperator(String op, TokenNode leaf) {
+        // "not" 和 "#" 只能是一元运算符
+        if ("not".equals(op) || "#".equals(op))
+            return true;
+        // 对于 "-" 和 "~"，需要检查上下文
+        // 简化处理：如果前一个 token 是运算符、左括号或关键字，则认为是一元
+        TokenNode parent = leaf.getParent();
+        if (parent != null) {
+            List<TokenNode> siblings = parent.getChildren();
+            int idx = siblings.indexOf(leaf);
+            if (idx == 0)
+                return true; // 第一个元素，可能是一元
+            if (idx > 0) {
+                TokenNode prev = siblings.get(idx - 1);
+                if (prev.getToken() != null) {
+                    Token.Type prevType = prev.getToken().getType();
+                    String prevVal = prev.getToken().getValue();
+                    if (prevType == Token.Type.OPERATOR ||
+                            "(".equals(prevVal) || "[".equals(prevVal) || "{".equals(prevVal) ||
+                            prevType == Token.Type.KEYWORD) {
+                        return ("-".equals(op) || "~".equals(op));
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private void mutateStrings(TokenNode tree, ThreadLocalRandom rand) {
@@ -200,27 +270,47 @@ public class LuaMutator implements Mutator {
     }
 
     private String mutateStringValue(String original, ThreadLocalRandom rand) {
-        if (original.length() < 2) return original;
-        
+        if (original.length() < 2)
+            return original;
+
         int op = rand.nextInt(6);
         char quote = original.charAt(0);
         String inner = original.length() > 2 ? original.substring(1, original.length() - 1) : "";
-        
+
         switch (op) {
             case 0:
-                return original.substring(1, original.length() - 1);
+                // 保留引号，清空内容
+                return quote + "" + quote;
             case 1:
+                // 对 payload 进行转义处理后再插入
                 String payload = INJECTION_PAYLOADS[rand.nextInt(INJECTION_PAYLOADS.length)];
-                return quote + inner + payload + quote;
+                String escaped = escapeForLua(payload, quote);
+                return quote + inner + escaped + quote;
             case 2:
                 return quote + inner.repeat(10 + rand.nextInt(100)) + quote;
             case 3:
                 return quote + "%" + "b()[a-z]*" + quote;
             case 4:
-                return "[[" + inner + "]]";
+                // 长字符串：使用带等号的长括号 [=[...]=] 避免内容中 ]] 导致提前闭合
+                // 如果内容包含 ]=]，则使用更高级别的 [==[...]==]
+                if (inner.contains("]=]")) {
+                    String safeInner = inner.replace("]==]", "]=]=[");
+                    return "[==[" + safeInner + "]==]";
+                } else {
+                    return "[=[" + inner + "]=]";
+                }
             default:
-                return quote + "\\0\\1\\2\\3" + inner + quote;
+                // 使用正确的 Lua 转义序列格式
+                return quote + "\\000\\001\\002\\003" + inner + quote;
         }
+    }
+
+    private String escapeForLua(String s, char quote) {
+        return s.replace("\\", "\\\\")
+                .replace(String.valueOf(quote), "\\" + quote)
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\0", "\\000");
     }
 
     private void mutateIdentifiers(TokenNode tree, ThreadLocalRandom rand) {
@@ -236,6 +326,8 @@ public class LuaMutator implements Mutator {
     }
 
     private void insertRandomStatement(TokenNode tree, ThreadLocalRandom rand) {
+        // 使用随机后缀避免标签冲突
+        String labelSuffix = Integer.toHexString(rand.nextInt(0xFFFF));
         String[] statements = {
                 "collectgarbage()",
                 "debug.getregistry()",
@@ -243,9 +335,9 @@ public class LuaMutator implements Mutator {
                 "coroutine.yield()",
                 "setmetatable({}, {__gc = function() end})",
                 "rawset(_G, 'fuzz', nil)",
-                "goto fuzz_label ::fuzz_label::",
+                "::fuzz_" + labelSuffix + ":: do end",
         };
-        
+
         Token newToken = new Token(Token.Type.IDENTIFIER, statements[rand.nextInt(statements.length)] + "; ");
         List<TokenNode> children = tree.getChildren();
         if (!children.isEmpty()) {
@@ -280,21 +372,21 @@ public class LuaMutator implements Mutator {
     private byte[] createDeepNesting(byte[] seedData, ThreadLocalRandom rand) {
         StringBuilder sb = new StringBuilder();
         int depth = 50 + rand.nextInt(100);
-        
+
         for (int i = 0; i < depth; i++) {
             sb.append("do ");
         }
-        
+
         if (seedData != null && seedData.length > 0) {
             sb.append(new String(seedData, StandardCharsets.UTF_8));
         } else {
             sb.append("local x = 1");
         }
-        
+
         for (int i = 0; i < depth; i++) {
             sb.append(" end");
         }
-        
+
         return sb.toString().getBytes(StandardCharsets.UTF_8);
     }
 
@@ -304,14 +396,16 @@ public class LuaMutator implements Mutator {
         int lines = 5 + rand.nextInt(15);
         for (int i = 0; i < lines; i++) {
             sb.append(generateStat(0, rand)).append("\n");
-            if (rand.nextInt(20) == 0) sb.append("collectgarbage();\n");
+            if (rand.nextInt(20) == 0)
+                sb.append("collectgarbage();\n");
         }
         sb.append("end");
         return sb.toString();
     }
 
     private String generateStat(int depth, ThreadLocalRandom rand) {
-        if (depth > MAX_DEPTH) return "do return end";
+        if (depth > MAX_DEPTH)
+            return "do return end";
 
         int type = rand.nextInt(100);
 
@@ -324,7 +418,7 @@ public class LuaMutator implements Mutator {
         } else if (type < 65) {
             return "if " + generateExpr(depth, rand) + " then " + generateStat(depth + 1, rand) + " end";
         } else if (type < 75) {
-            return "for i = 1, " + (rand.nextInt(100)+1) + " do " + generateStat(depth + 1, rand) + " end";
+            return "for i = 1, " + (rand.nextInt(100) + 1) + " do " + generateStat(depth + 1, rand) + " end";
         } else if (type < 85) {
             return "function " + pickVar(rand) + "() " + generateStat(depth + 1, rand) + " end";
         } else {
@@ -333,12 +427,16 @@ public class LuaMutator implements Mutator {
     }
 
     private String generateExpr(int depth, ThreadLocalRandom rand) {
-        if (depth > MAX_DEPTH) return "nil";
+        if (depth > MAX_DEPTH)
+            return "nil";
 
         int type = rand.nextInt(100);
-        if (type < 30) return generatePrimitive(rand);
-        if (type < 55) return pickVar(rand);
-        if (type < 70) return generateTable(depth + 1, rand);
+        if (type < 30)
+            return generatePrimitive(rand);
+        if (type < 55)
+            return pickVar(rand);
+        if (type < 70)
+            return generateTable(depth + 1, rand);
         if (type < 90) {
             String op = pickOp(rand);
             return "(" + generateExpr(depth + 1, rand) + " " + op + " " + generateExpr(depth + 1, rand) + ")";
@@ -350,7 +448,8 @@ public class LuaMutator implements Mutator {
         StringBuilder sb = new StringBuilder("{");
         int size = rand.nextInt(6);
         for (int i = 0; i < size; i++) {
-            if (i > 0) sb.append(", ");
+            if (i > 0)
+                sb.append(", ");
             if (rand.nextBoolean()) {
                 sb.append(generateExpr(depth + 1, rand));
             } else {
@@ -364,15 +463,20 @@ public class LuaMutator implements Mutator {
     private String generateComplexStat(ThreadLocalRandom rand) {
         int r = rand.nextInt(5);
         String v = pickVar(rand);
+        // 使用随机后缀避免标签冲突
+        String labelSuffix = Integer.toHexString(rand.nextInt(0xFFFF));
 
         if (r == 0) {
-            return "setmetatable(" + v + ", { __index = " + pickVar(rand) + ", __gc = function(o) collectgarbage() end, __mode = 'kv' })";
+            return "setmetatable(" + v + ", { __index = " + pickVar(rand)
+                    + ", __gc = function(o) collectgarbage() end, __mode = 'kv' })";
         } else if (r == 1) {
             return "pcall(debug.setuservalue, " + v + ", " + pickVar(rand) + ")";
         } else if (r == 2) {
-            return "coroutine.resume(coroutine.create(function(x) " + pickVar(rand) + "(x) end), " + pickVar(rand) + ")";
+            return "coroutine.resume(coroutine.create(function(x) " + pickVar(rand) + "(x) end), " + pickVar(rand)
+                    + ")";
         } else if (r == 3) {
-            return "::lbl::; if " + pickVar(rand) + " then goto lbl end";
+            // 使用唯一标签名避免多次生成时的冲突
+            return "::lbl_" + labelSuffix + "::; if " + pickVar(rand) + " then goto lbl_" + labelSuffix + " end";
         } else {
             return "pcall(load, string.dump(" + v + "))";
         }
@@ -399,23 +503,35 @@ public class LuaMutator implements Mutator {
     }
 
     private String pickOp(ThreadLocalRandom rand) {
-        String[] ops = {"+", "-", "*", "/", "%", "^", "..", "==", "~=", "<", "<=", ">", ">=", "and", "or", "//", "&", "|", "~", "<<", ">>"};
+        // 只使用明确的二元运算符，避免生成 "a not b" 这样的非法语法
+        // 注意：移除了 ~ 因为它既是一元位取反也是二元异或，在表达式生成中可能产生歧义
+        // 位运算符 &, |, <<, >> 是明确的二元运算符 (Lua 5.3+)
+        String[] ops = { "+", "-", "*", "/", "%", "^", "..", "==", "~=", "<", "<=", ">", ">=", "and", "or", "//", "&",
+                "|", "<<", ">>" };
         return ops[rand.nextInt(ops.length)];
     }
 
     private String generatePrimitive(ThreadLocalRandom rand) {
         int r = rand.nextInt(7);
         switch (r) {
-            case 0: return String.valueOf(rand.nextInt(100));
-            case 1: return String.valueOf(rand.nextInt());
-            case 2: return String.valueOf(rand.nextDouble());
-            case 3: return "0x" + Integer.toHexString(rand.nextInt());
-            case 4: return rand.nextBoolean() ? "true" : "false";
-            case 5: return "nil";
+            case 0:
+                return String.valueOf(rand.nextInt(100));
+            case 1:
+                return String.valueOf(rand.nextInt());
+            case 2:
+                return String.valueOf(rand.nextDouble());
+            case 3:
+                return "0x" + Integer.toHexString(rand.nextInt());
+            case 4:
+                return rand.nextBoolean() ? "true" : "false";
+            case 5:
+                return "nil";
             case 6:
-                if (rand.nextBoolean()) return "'" + "A".repeat(rand.nextInt(50)) + "'";
+                if (rand.nextBoolean())
+                    return "'" + "A".repeat(rand.nextInt(50)) + "'";
                 return "'%" + (rand.nextBoolean() ? "b" : "f") + "[a-z]'";
-            default: return "0";
+            default:
+                return "0";
         }
     }
 }
