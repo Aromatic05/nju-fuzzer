@@ -10,17 +10,26 @@ import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * 语法感知 JSON 变异器
+ * 语法感知 MJS 变异器
  * 
  * 核心改进：
  * 1. 使用种子内容进行变异，而非完全随机生成
  * 2. 容错分词 -> 树构建 -> 语法感知变异 -> 序列化
  * 3. 保留原始结构的同时进行针对性修改
+ * 4. 可选的语法检查与自动修复
  */
-public class JsonMutator implements Mutator {
+public class MjsMutator implements Mutator {
 
     private static final int MAX_DEPTH = 32;
     private static final int WIDE_OBJECT_SIZE = 2000;
+    private static final int MAX_SYNTAX_FIX_ATTEMPTS = 3;
+
+    // 语法检查器和修复器
+    private final MjsSyntaxChecker syntaxChecker = new MjsSyntaxChecker();
+    private final MjsSyntaxFixer syntaxFixer = new MjsSyntaxFixer(syntaxChecker);
+
+    // 是否强制语法正确（默认false以允许生成格式错误的输入用于测试解析器容错）
+    private boolean enforceSyntaxCorrectness = false;
 
     private static final String[] ATTACK_PAYLOADS = {
             "{\"a\":1, \"a\":2, \"a\":3}",
@@ -44,7 +53,33 @@ public class JsonMutator implements Mutator {
             "\\uDFFF"
     };
 
-    private final JsonTokenizer tokenizer = new JsonTokenizer();
+    private final MjsTokenizer tokenizer = new MjsTokenizer();
+
+    /**
+     * 设置是否强制语法正确
+     * @param enforce true则变异后自动修复语法错误，false则允许生成语法错误的输入
+     */
+    public void setEnforceSyntaxCorrectness(boolean enforce) {
+        this.enforceSyntaxCorrectness = enforce;
+    }
+
+    /**
+     * 检查代码语法是否正确
+     * @param code 要检查的代码
+     * @return 语法检查结果
+     */
+    public MjsSyntaxChecker.CheckResult checkSyntax(String code) {
+        return syntaxChecker.check(code);
+    }
+
+    /**
+     * 修复代码语法错误
+     * @param code 要修复的代码
+     * @return 修复后的代码
+     */
+    public String fixSyntax(String code) {
+        return syntaxFixer.fix(code);
+    }
 
     @Override
     public Iterator<Testcase> mutate(Seed seed, int energy) {
@@ -71,23 +106,23 @@ public class JsonMutator implements Mutator {
                     // [3%] 原始攻击 Payload
                     mutatedBytes = ATTACK_PAYLOADS[rand.nextInt(ATTACK_PAYLOADS.length)]
                             .getBytes(StandardCharsets.UTF_8);
-                    desc = "JSON:Payload";
+                    desc = "MJS:Payload";
                 } else if (strategy < 8) {
                     // [5%] 深层嵌套攻击
                     mutatedBytes = createDeepNestingFromSeed(seedData, rand);
-                    desc = "JSON:DeepNest";
+                    desc = "MJS:DeepNest";
                 } else if (strategy < 13) {
                     // [5%] 宽对象攻击
                     mutatedBytes = generateWideObject(rand).getBytes(StandardCharsets.UTF_8);
-                    desc = "JSON:Wide";
+                    desc = "MJS:Wide";
                 } else if (seedData == null || seedData.length == 0) {
                     // 种子为空，生成新内容
                     mutatedBytes = generateValue(0, rand).getBytes(StandardCharsets.UTF_8);
-                    desc = "JSON:Gen";
+                    desc = "MJS:Gen";
                 } else {
                     // [85%] 基于种子的语法感知变异
                     mutatedBytes = mutateWithGrammar(seedData, rand);
-                    desc = "JSON:GrammarMut";
+                    desc = "MJS:GrammarMut";
                 }
 
                 // 应用编码和 BOM
@@ -143,7 +178,7 @@ public class JsonMutator implements Mutator {
                     insertExtraPunctuation(tree, rand);
                     break;
                 case 8:
-                    replaceJsonKeywords(tree, rand);
+                    replaceMjsKeywords(tree, rand);
                     break;
                 default:
                     addRandomToken(tree, rand);
@@ -154,16 +189,48 @@ public class JsonMutator implements Mutator {
         // 4. 序列化
         String result;
         if (rand.nextInt(20) == 0) {
+            // [5%] 故意生成语法错误的输入
             result = tree.serializeWithMissingClose(rand, 0.2);
         } else {
             result = tree.serialize();
         }
 
+        // 5. 可选的语法检查与修复
+        if (enforceSyntaxCorrectness) {
+            result = applySyntaxFixIfNeeded(result, rand);
+        }
+
         return result.getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * 检查语法并在需要时修复
+     */
+    private String applySyntaxFixIfNeeded(String code, ThreadLocalRandom rand) {
+        MjsSyntaxChecker.CheckResult checkResult = syntaxChecker.check(code);
+        
+        if (checkResult.isValid) {
+            return code;
+        }
+        
+        // 尝试修复
+        for (int attempt = 0; attempt < MAX_SYNTAX_FIX_ATTEMPTS; attempt++) {
+            String fixed = syntaxFixer.fix(code);
+            MjsSyntaxChecker.CheckResult fixedResult = syntaxChecker.check(fixed);
+            
+            if (fixedResult.isValid) {
+                return fixed;
+            }
+            
+            code = fixed;
+        }
+        
+        // 无法修复，返回最后一次尝试的结果
+        return code;
+    }
+
     // ==========================================
-    // JSON 特定变异操作
+    // MJS 特定变异操作
     // ==========================================
 
     private void mutateStringTokens(TokenNode tree, ThreadLocalRandom rand) {
@@ -216,7 +283,7 @@ public class JsonMutator implements Mutator {
         tree.insertChild(insertPos, TokenNode.createLeaf(extraToken));
     }
 
-    private void replaceJsonKeywords(TokenNode tree, ThreadLocalRandom rand) {
+    private void replaceMjsKeywords(TokenNode tree, ThreadLocalRandom rand) {
         String[][] replacements = {
             {"true", "True"}, {"true", "TRUE"},
             {"false", "False"}, {"false", "FALSE"},
