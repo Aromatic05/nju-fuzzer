@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * JsonMutator 单元测试
+ * MjsMutator 单元测试
  *
  * 验证点：
  * 1. 编码多样性 (BOM 识别与多字符集测试)
@@ -23,15 +23,15 @@ import static org.junit.jupiter.api.Assertions.*;
  * 3. 语义攻击 (孤立代理对、畸形数字解析)
  * 4. 统计报告 (可视化覆盖率)
  */
-class JsonMutatorTest {
+class MjsMutatorTest {
 
     private Seed dummySeed;
-    private JsonMutator mutator;
+    private MjsMutator mutator;
 
     @BeforeEach
     void setUp() {
-        dummySeed = Seed.loadWithMetadata(new File("dummy_json"), new byte[0]);
-        mutator = new JsonMutator();
+        dummySeed = Seed.loadWithMetadata(new File("dummy_mjs"), new byte[0]);
+        mutator = new MjsMutator();
     }
 
     // ==========================================
@@ -77,7 +77,7 @@ class JsonMutatorTest {
 
         // 验证多样性 (放宽到 80%，因为固定 Payload 和简单类型可能重复)
         assertTrue(hashes.size() > (testCount * 0.8),
-                "JSON 生成重复率过高，唯一数: " + hashes.size());
+                "MJS 生成重复率过高，唯一数: " + hashes.size());
     }
 
     // ==========================================
@@ -104,7 +104,7 @@ class JsonMutatorTest {
 
             // 识别编码并转回字符串以便正则分析
             String content = decodeSmart(data, stats);
-            analyzeJson(content, stats, data.length);
+            analyzeMjs(content, stats, data.length);
         }
 
         printReport(stats);
@@ -116,11 +116,11 @@ class JsonMutatorTest {
         assertCovered(stats, "Edge Case Numbers (1e309/00/inf)");
     }
 
-    private void analyzeJson(String json, Map<String, Integer> stats, int rawLen) {
+    private void analyzeMjs(String mjs, Map<String, Integer> stats, int rawLen) {
         // 1. 深度嵌套检测 (简单计数括号)
         int maxDepth = 0;
         int current = 0;
-        for (char c : json.toCharArray()) {
+        for (char c : mjs.toCharArray()) {
             if (c == '[' || c == '{') current++;
             if (c == ']' || c == '}') current--;
             maxDepth = Math.max(maxDepth, current);
@@ -128,22 +128,22 @@ class JsonMutatorTest {
         if (maxDepth > 100) inc(stats, "Deep Nesting (>100)");
 
         // 2. 宽对象检测
-        if (json.contains("\"k1000\":")) inc(stats, "Wide Object (>1000 keys)");
+        if (mjs.contains("\"k1000\":")) inc(stats, "Wide Object (>1000 keys)");
 
         // 3. 孤立代理对 (\\uD8xx 且后面不跟 \\uDCxx)
         // 简化检测：直接查找是否有 D8/D9/DA/DB 开头的转义
-        if (Pattern.compile("\\\\u[dD][89abAB]").matcher(json).find()) {
+        if (Pattern.compile("\\\\u[dD][89abAB]").matcher(mjs).find()) {
             inc(stats, "Lone Surrogates (\\uD8xx)");
         }
 
         // 4. 边缘数值
-        if (Pattern.compile("1e309|\\+123|00[0-9]|NaN|Infinity|-0|1\\.").matcher(json).find()) {
+        if (Pattern.compile("1e309|\\+123|00[0-9]|NaN|Infinity|-0|1\\.").matcher(mjs).find()) {
             inc(stats, "Edge Case Numbers (1e309/00/inf)");
         }
 
         // 5. 尾随逗号与非标关键字
-        if (json.contains(",]") || json.contains(",}")) inc(stats, "Trailing Comma");
-        if (Pattern.compile("True|Null|undefined").matcher(json).find()) {
+        if (mjs.contains(",]") || mjs.contains(",}")) inc(stats, "Trailing Comma");
+        if (Pattern.compile("True|Null|undefined").matcher(mjs).find()) {
             inc(stats, "Non-standard Keywords");
         }
     }
@@ -182,7 +182,7 @@ class JsonMutatorTest {
 
     private void printReport(Map<String, Integer> stats) {
         int realTotal = stats.get("Total");
-        System.out.println("====== JsonMutator Functional Coverage Report ======");
+        System.out.println("====== MjsMutator Functional Coverage Report ======");
         System.out.println("Real Iterations: " + realTotal);
         System.out.println("----------------------------------------------------");
         System.out.printf("%-30s | %-10s | %-10s%n", "Attack Vector", "Count", "Rate");
