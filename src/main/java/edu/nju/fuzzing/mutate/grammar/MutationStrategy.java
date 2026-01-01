@@ -238,6 +238,7 @@ public class MutationStrategy {
     /**
      * 数字边界值变异
      * 将数字替换为边界值（MAX_INT, MIN_INT, 0, -1 等）
+     * 注意：Lua 不支持 NaN、Infinity 字面量，需要使用表达式
      */
     public static TokenNode mutateNumbers(TokenNode root, ThreadLocalRandom rand) {
         String[] boundaryValues = {
@@ -246,8 +247,9 @@ public class MutationStrategy {
             "9223372036854775807", "-9223372036854775808", // INT64 边界
             "1.7976931348623157E308",          // Double MAX
             "4.9E-324",                        // Double MIN
-            "NaN", "Infinity", "-Infinity",
-            "1e309", "-1e309",                 // 溢出
+            "0/0",                             // NaN (Lua 兼容)
+            "math.huge", "-math.huge",         // Infinity (Lua 兼容)
+            "1e308",                           // 接近最大值
             "0.0", "-0.0", "0e0"
         };
         
