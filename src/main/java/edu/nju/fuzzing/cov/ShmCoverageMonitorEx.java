@@ -2,6 +2,7 @@ package edu.nju.fuzzing.cov;
 
 import edu.nju.fuzzing.model.CoverageEx;
 import edu.nju.fuzzing.model.RunResult;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Extended ShmCoverageMonitor that provides edge-level coverage data.
@@ -21,6 +22,11 @@ public class ShmCoverageMonitorEx implements CoverageMonitorEx {
 
     private volatile boolean stabilityDetectionEnabled = false;
     private volatile boolean started = false;
+    // Execution counter for generating execIds locally (like ShmCoverageMonitor)
+    private final AtomicLong execCounter = new AtomicLong(0);
+    private final AtomicLong lastInterestingExecId = new AtomicLong(0);
+    private volatile long lastInterestingAtMillis = 0;
+    private volatile long startTimeMillis = 0;
 
     /**
      * Creates a monitor with a new CoverageDB.
@@ -51,6 +57,7 @@ public class ShmCoverageMonitorEx implements CoverageMonitorEx {
         if (bitmapSource instanceof SysVShmBitmapSource shmSource && !shmSource.isAttached()) {
             shmSource.attach();
         }
+        startTimeMillis = System.currentTimeMillis();
         started = true;
     }
 
@@ -61,14 +68,50 @@ public class ShmCoverageMonitorEx implements CoverageMonitorEx {
 
     @Override
     public CoverageEx afterRunEx(RunResult result) {
+        long execId = execCounter.incrementAndGet();
+        long timestamp = System.currentTimeMillis();
+
+        if (!bitmapSource.isAttached()) {
+            return new CoverageEx(
+                    execId,
+                    timestamp,
+                    mapSize,
+                    0,
+                    0,
+                    0L,
+                    false,
+                    null,
+                    null,
+                    result == null ? 0L : result.execTimeNanos(),
+                    CoverageEx.Stability.UNKNOWN
+            );
+        }
+
         // Read bitmap
         bitmapSource.readInto(buffer);
 
         // Compute diff with edge-level detail
         DiffResultEx diff = strategy.diffEx(buffer);
 
-        // Create extended coverage
-        return CoverageEx.from(diff, result, mapSize);
+        if (diff.interesting()) {
+            lastInterestingExecId.set(execId);
+            lastInterestingAtMillis = timestamp;
+        }
+
+        // Create extended coverage using generated execId
+        return new CoverageEx(
+                execId,
+                timestamp,
+                mapSize,
+                diff.nonZeroBytes(),
+                diff.newCount(),
+                diff.bitmapHash(),
+                diff.interesting(),
+                diff.hitEdges(),
+                diff.newEdges(),
+                result == null ? 0L : result.execTimeNanos(),
+                CoverageEx.Stability.UNKNOWN
+        );
     }
 
     @Override
