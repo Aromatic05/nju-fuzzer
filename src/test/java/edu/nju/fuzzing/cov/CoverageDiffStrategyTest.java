@@ -146,7 +146,6 @@ class CoverageDiffStrategyTest {
     void testStrategyComparison() {
         // Compare behavior of SeenNonZero vs PrevBitmap
         SeenNonZeroStrategy seenStrategy = new SeenNonZeroStrategy(MAP_SIZE);
-        PrevBitmapStrategy prevStrategy = new PrevBitmapStrategy(MAP_SIZE);
 
         byte[] bitmap1 = new byte[MAP_SIZE];
         bitmap1[0] = 1;
@@ -159,16 +158,13 @@ class CoverageDiffStrategyTest {
 
         // First run - both find new coverage
         assertTrue(seenStrategy.diff(bitmap1).interesting());
-        assertTrue(prevStrategy.diff(bitmap1).interesting());
 
         // Second run - both find new coverage (different position)
         assertTrue(seenStrategy.diff(bitmap2).interesting());
-        assertTrue(prevStrategy.diff(bitmap2).interesting());
 
         // Third run - position 0 again
         // SeenNonZero: NOT interesting (already seen)
         // PrevBitmap: interesting (different from prev which was 100)
         assertFalse(seenStrategy.diff(bitmap3).interesting());
-        assertTrue(prevStrategy.diff(bitmap3).interesting());
     }
 }

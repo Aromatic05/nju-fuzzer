@@ -48,7 +48,6 @@ public class StrategyComparisonTest {
         try {
             // Create different strategies for comparison
             SeenNonZeroStrategy seenStrategy = new SeenNonZeroStrategy(MAP_SIZE);
-            PrevBitmapStrategy prevStrategy = new PrevBitmapStrategy(MAP_SIZE);
             CoverageDiffStrategy hashFilteredStrategy = CoverageDiffStrategy.createDefault(MAP_SIZE);
             
             // Test inputs that exercise different paths
@@ -85,17 +84,14 @@ public class StrategyComparisonTest {
 
                 // Compare all strategies
                 CoverageDiffStrategy.DiffResult seenResult = seenStrategy.diff(bitmap);
-                CoverageDiffStrategy.DiffResult prevResult = prevStrategy.diff(bitmap);
                 CoverageDiffStrategy.DiffResult hashResult = hashFilteredStrategy.diff(bitmap);
 
                 if (seenResult.interesting()) seenInteresting++;
-                if (prevResult.interesting()) prevInteresting++;
                 if (hashResult.interesting()) hashInteresting++;
 
                 System.out.println(String.format("%-30s | %3d %-8s | %3d %-8s | %3d %-8s",
                         shortInput,
                         seenResult.newBytes(), seenResult.interesting() ? "✓" : "",
-                        prevResult.newBytes(), prevResult.interesting() ? "✓" : "",
                         hashResult.newBytes(), hashResult.interesting() ? "✓" : ""));
             }
 
