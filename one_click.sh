@@ -46,9 +46,9 @@ fi
 
 # 根据目标生成命令行模板（对齐文档/表格里的 AFL-CMD 要求）
 case "$PROG" in
-    "c++filt")          CMD="./env/out/c++filt @@" ;;           # STDIN
+    "c++filt")          CMD="./env/out/c++filt" ;;             # STDIN
     "readelf")          CMD="./env/out/readelf -a @@ @@" ;;    # FILE (two @@)
-    "nm")               CMD="./env/out/nm @@" ;;           # FILE
+    "nm")               CMD="./env/out/nm @@" ;;               # FILE
     "objdump")          CMD="./env/out/objdump -d @@" ;;       # FILE
     "djpeg")            CMD="./env/out/djpeg @@" ;;            # FILE
     "readpng")          CMD="./env/out/readpng" ;;             # STDIN
@@ -66,4 +66,4 @@ echo "AFL-CMD: $CMD"
 mvn -q -DskipTests exec:java \
     -Dnju.fuzzer.curveBucketSec=$CURVE_BUCKET_SEC \
   -Dexec.mainClass=edu.nju.fuzzing.cli.FuzzerMain \
-    -Dexec.args="--workdir $WORKDIR --seeds $SEEDS_DIR --duration 7200 --timeout 2000 --tid $PROG --coverage shmex --cmd \"$CMD\""
+    -Dexec.args="--workdir $WORKDIR --seeds $SEEDS_DIR --duration 60 --timeout 2000 --tid $PROG --coverage shmex --cmd \"$CMD\""
