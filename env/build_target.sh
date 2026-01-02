@@ -35,7 +35,7 @@ cp -f target/binutils/bin/objdump out/objdump
 # =========================================================
 rm -rf third_party/libjpeg-turbo-3.0.4/build-afl
 mkdir -p third_party/libjpeg-turbo-3.0.4/build-afl
-cd third_party/libjpeg-static-turbo-3.0.4/build-afl
+cd third_party/libjpeg-turbo-3.0.4/build-afl
 cmake .. \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX="$(pwd)/../../../target/libjpeg-turbo" \
