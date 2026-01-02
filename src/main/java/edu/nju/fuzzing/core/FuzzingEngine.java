@@ -293,24 +293,6 @@ public class FuzzingEngine {
                 .build();
     }
 
-    private static Mutator identityMutator() {
-        return (seed, energy) -> new Iterator<>() {
-            private int remaining = Math.max(1, energy);
-
-            @Override
-            public boolean hasNext() {
-                return remaining > 0;
-            }
-
-            @Override
-            public Testcase next() {
-                if (remaining <= 0) throw new java.util.NoSuchElementException();
-                remaining--;
-                return new Testcase(seed.getDataCopy(), seed, "identity");
-            }
-        };
-    }
-
     /**
      * Default mutator for the engine: format-aware mutators with a Havoc fallback.
      *
