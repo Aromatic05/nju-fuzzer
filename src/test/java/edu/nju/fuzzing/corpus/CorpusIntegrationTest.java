@@ -64,6 +64,7 @@ class CorpusIntegrationTest {
         bitmap2[200] = 2;
         CoverageDiffStrategy.DiffResult result2 = strategy.diff(bitmap2);
         // Depending on strategy, this may or may not be interesting
+        assertFalse(result2.interesting());
         
         // Third input - new coverage
         byte[] bitmap3 = new byte[mapSize];

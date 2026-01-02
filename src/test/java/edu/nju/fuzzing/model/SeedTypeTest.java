@@ -4,8 +4,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.nio.charset.StandardCharsets;
-
 /**
  * SeedTypeTest
  * 全面验证种子类型自动识别逻辑的正确性与健壮性。

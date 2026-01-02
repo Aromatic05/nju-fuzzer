@@ -290,6 +290,8 @@ public class CxxSyntaxFixerTest {
         String fixed = fixer.fix(input);
         
         CxxSyntaxChecker.CheckResult result = checker.check(fixed);
+        assertTrue(result.isValid || result.getTotalMissingE() == 0, 
+                "Should fix all issues: " + result.errorMessage);
         // 即使无法完全修复，也不应该抛出异常
         assertNotNull(fixed);
         assertTrue(fixed.startsWith("_Z"));

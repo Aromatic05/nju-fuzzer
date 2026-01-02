@@ -51,6 +51,7 @@ class StructureMutatorTest {
         // 值应该被改变
         int newValue = ByteBuffer.wrap(result).order(ByteOrder.BIG_ENDIAN).getInt(0);
         // 大多数情况下值会改变（除非随机到了相同值）
+        assertTrue(newValue != 50, "长度值应该被变异");
         assertNotNull(result);
         assertEquals(data.length, result.length);
     }

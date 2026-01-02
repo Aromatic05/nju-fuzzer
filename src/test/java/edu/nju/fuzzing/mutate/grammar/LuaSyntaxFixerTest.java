@@ -855,6 +855,7 @@ class LuaSyntaxFixerTest {
             // 创建超过 5 个问题的代码
             String code = "do do do do do do do {{{ (((";
             String fixed = fixer.quickFix(code);
+            assertNull(fixed, "Should return null for more than 5 issues");
 
             // 可能返回 null 或成功修复
             // 关键是不会崩溃

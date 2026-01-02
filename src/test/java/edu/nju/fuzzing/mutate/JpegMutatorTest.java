@@ -39,7 +39,7 @@ class JpegMutatorTest {
     private static final int SOF2 = 0xC2;
     private static final int SOF3 = 0xC3; // Lossless
     private static final int SOF5 = 0xC5; // Hierarchical
-    private static final int SOF6 = 0xC6;
+    // private static final int SOF6 = 0xC6;
     private static final int SOF7 = 0xC7;
     private static final int APP0 = 0xE0;
     private static final int APP1 = 0xE1;

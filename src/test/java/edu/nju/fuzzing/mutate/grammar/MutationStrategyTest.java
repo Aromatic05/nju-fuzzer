@@ -20,7 +20,7 @@ class MutationStrategyTest {
     void testDuplicateSubtree() {
         TokenNode root = createSampleTree();
         int originalBlockCount = root.collectBlocks().size();
-        
+        assertTrue(originalBlockCount > 0, "Sample tree should have at least one block node");
         MutationStrategy.duplicateSubtree(root, 3, rand);
         
         // 复制后应该有更多内容
@@ -47,6 +47,7 @@ class MutationStrategyTest {
     void testSwapNodes() {
         TokenNode root = createSampleTree();
         String before = root.serialize();
+        assertNotNull(before);
         
         // 多次交换以增加变化概率
         for (int i = 0; i < 5; i++) {
@@ -119,6 +120,7 @@ class MutationStrategyTest {
         root.addChild(TokenNode.createLeaf(new Token(Token.Type.NUMBER, "100")));
         
         String before = root.serialize();
+        assertNotNull(before);
         
         // 多次变异数字
         for (int i = 0; i < 10; i++) {

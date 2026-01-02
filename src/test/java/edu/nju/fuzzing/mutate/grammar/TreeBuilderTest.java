@@ -18,8 +18,9 @@ class TreeBuilderTest {
     @Test
     @DisplayName("Test 1: 空 token 列表返回空根节点")
     void testEmptyTokens() {
-        TreeBuilder builder = new TreeBuilder();
-        TokenNode root = builder.build(Arrays.asList());
+        TokenNode root = TreeBuilder.build(Arrays.asList());
+        assertEquals(0, root.getChildren().size());
+        assertNotNull(root);
         
         assertEquals(TokenNode.NodeType.ROOT, root.getNodeType());
         assertTrue(root.getChildren().isEmpty());
@@ -28,12 +29,12 @@ class TreeBuilderTest {
     @Test
     @DisplayName("Test 2: 单个 token 创建叶子节点")
     void testSingleToken() {
-        TreeBuilder builder = new TreeBuilder();
         List<Token> tokens = Arrays.asList(
             new Token(Token.Type.STRING, "\"hello\"")
         );
         
-        TokenNode root = builder.build(tokens);
+        TokenNode root = TreeBuilder.build(tokens);
+        assertNotNull(root);
         
         assertEquals(1, root.getChildren().size());
         assertEquals(TokenNode.NodeType.LEAF, root.getChildren().get(0).getNodeType());
@@ -43,7 +44,6 @@ class TreeBuilderTest {
     @Test
     @DisplayName("Test 3: 匹配的大括号创建块节点")
     void testMatchedBraces() {
-        TreeBuilder builder = new TreeBuilder();
         List<Token> tokens = Arrays.asList(
             new Token(Token.Type.LBRACE, "{"),
             new Token(Token.Type.STRING, "\"key\""),
@@ -52,7 +52,7 @@ class TreeBuilderTest {
             new Token(Token.Type.RBRACE, "}")
         );
         
-        TokenNode root = builder.build(tokens);
+        TokenNode root = TreeBuilder.build(tokens);
         
         assertEquals(1, root.getChildren().size());
         TokenNode block = root.getChildren().get(0);
@@ -63,7 +63,6 @@ class TreeBuilderTest {
     @Test
     @DisplayName("Test 4: 嵌套结构")
     void testNestedStructure() {
-        TreeBuilder builder = new TreeBuilder();
         List<Token> tokens = Arrays.asList(
             new Token(Token.Type.LBRACE, "{"),
             new Token(Token.Type.STRING, "\"arr\""),
@@ -76,7 +75,7 @@ class TreeBuilderTest {
             new Token(Token.Type.RBRACE, "}")
         );
         
-        TokenNode root = builder.build(tokens);
+        TokenNode root = TreeBuilder.build(tokens);
         
         assertEquals(1, root.getChildren().size());
         TokenNode outerBlock = root.getChildren().get(0);
@@ -96,7 +95,6 @@ class TreeBuilderTest {
     @Test
     @DisplayName("Test 5: 未匹配的开括号 - 容错处理")
     void testUnmatchedOpenBrace() {
-        TreeBuilder builder = new TreeBuilder();
         List<Token> tokens = Arrays.asList(
             new Token(Token.Type.LBRACE, "{"),
             new Token(Token.Type.STRING, "\"key\""),
@@ -105,7 +103,7 @@ class TreeBuilderTest {
             // 缺少 }
         );
         
-        TokenNode root = builder.build(tokens);
+        TokenNode root = TreeBuilder.build(tokens);
         
         // 应该仍然能构建树，未闭合的块也会被添加
         assertNotNull(root);
@@ -115,13 +113,12 @@ class TreeBuilderTest {
     @Test
     @DisplayName("Test 6: 未匹配的闭括号 - 容错处理")
     void testUnmatchedCloseBrace() {
-        TreeBuilder builder = new TreeBuilder();
         List<Token> tokens = Arrays.asList(
             new Token(Token.Type.STRING, "\"value\""),
             new Token(Token.Type.RBRACE, "}")  // 孤立的 }
         );
         
-        TokenNode root = builder.build(tokens);
+        TokenNode root = TreeBuilder.build(tokens);
         
         // 应该将孤立的 } 作为叶子节点或片段处理
         assertNotNull(root);
@@ -131,7 +128,6 @@ class TreeBuilderTest {
     @Test
     @DisplayName("Test 7: 混合括号类型")
     void testMixedBrackets() {
-        TreeBuilder builder = new TreeBuilder();
         List<Token> tokens = Arrays.asList(
             new Token(Token.Type.LBRACKET, "["),
             new Token(Token.Type.LBRACE, "{"),
@@ -140,7 +136,7 @@ class TreeBuilderTest {
             new Token(Token.Type.RBRACKET, "]")
         );
         
-        TokenNode root = builder.build(tokens);
+        TokenNode root = TreeBuilder.build(tokens);
         
         assertEquals(1, root.getChildren().size());
         TokenNode arrayBlock = root.getChildren().get(0);
@@ -159,7 +155,6 @@ class TreeBuilderTest {
     @Test
     @DisplayName("Test 8: XML 风格的尖括号")
     void testAngleBrackets() {
-        TreeBuilder builder = new TreeBuilder();
         List<Token> tokens = Arrays.asList(
             new Token(Token.Type.LANGLE, "<"),
             new Token(Token.Type.RAW, "tag"),
@@ -167,7 +162,7 @@ class TreeBuilderTest {
             new Token(Token.Type.RAW, "content")
         );
         
-        TokenNode root = builder.build(tokens);
+        TokenNode root = TreeBuilder.build(tokens);
         
         assertNotNull(root);
         assertFalse(root.getChildren().isEmpty());
@@ -176,7 +171,6 @@ class TreeBuilderTest {
     @Test
     @DisplayName("Test 9: 序列化后与原始匹配")
     void testSerializationRoundTrip() {
-        TreeBuilder builder = new TreeBuilder();
         List<Token> tokens = Arrays.asList(
             new Token(Token.Type.LBRACE, "{"),
             new Token(Token.Type.STRING, "\"x\""),
@@ -185,7 +179,7 @@ class TreeBuilderTest {
             new Token(Token.Type.RBRACE, "}")
         );
         
-        TokenNode root = builder.build(tokens);
+        TokenNode root = TreeBuilder.build(tokens);
         String serialized = root.serialize();
         
         assertEquals("{\"x\":42}", serialized);
@@ -194,7 +188,6 @@ class TreeBuilderTest {
     @Test
     @DisplayName("Test 10: 深度嵌套")
     void testDeepNesting() {
-        TreeBuilder builder = new TreeBuilder();
         // 创建 [[[1]]]
         List<Token> tokens = Arrays.asList(
             new Token(Token.Type.LBRACKET, "["),
@@ -206,7 +199,7 @@ class TreeBuilderTest {
             new Token(Token.Type.RBRACKET, "]")
         );
         
-        TokenNode root = builder.build(tokens);
+        TokenNode root = TreeBuilder.build(tokens);
         String serialized = root.serialize();
         
         assertEquals("[[[1]]]", serialized);

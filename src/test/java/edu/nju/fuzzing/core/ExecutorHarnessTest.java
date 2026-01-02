@@ -142,21 +142,21 @@ class ExecutorHarnessTest {
     
     @Test
     @DisplayName("NullCoverageMonitor returns empty coverage")
-    void nullMonitor_returnsEmptyCoverage() {
-        CoverageMonitor monitor = new NullCoverageMonitor(65536);
-        
-        Path dummyFile = tempDir.resolve("dummy");
-        var run = RunResult.of(
-            1L, dummyFile, 100L,
-            0, false, RunResult.Termination.NORMAL,
-            dummyFile, dummyFile
-        );
-        
-        Coverage coverage = monitor.afterRun(run);
-        
-        assertNotNull(coverage);
-        assertEquals(0, coverage.newBytes());
-        assertFalse(coverage.interesting());
-        assertEquals(65536, coverage.mapSize());
+    void nullMonitor_returnsEmptyCoverage() throws Exception {
+        try (CoverageMonitor monitor = new NullCoverageMonitor(65536)) {
+            Path dummyFile = tempDir.resolve("dummy");
+            var run = RunResult.of(
+                1L, dummyFile, 100L,
+                0, false, RunResult.Termination.NORMAL,
+                dummyFile, dummyFile
+            );
+            
+            Coverage coverage = monitor.afterRun(run);
+            
+            assertNotNull(coverage);
+            assertEquals(0, coverage.newBytes());
+            assertFalse(coverage.interesting());
+            assertEquals(65536, coverage.mapSize());
+        }
     }
 }

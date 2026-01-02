@@ -2,11 +2,8 @@ package edu.nju.fuzzing.cov;
 
 import com.sun.jna.Native;
 import com.sun.jna.NativeLong;
-import com.sun.jna.Pointer;
 
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -174,6 +171,7 @@ public class ShmCoverageIntegrationTest {
 
             // Use local strategy for this run's new coverage
             CoverageDiffStrategy.DiffResult localResult = localStrategy.diff(bitmap);
+            assert localResult != null;
             
             // Also update global strategy to track cumulative coverage
             CoverageDiffStrategy.DiffResult globalResult = globalStrategy.diff(bitmap);

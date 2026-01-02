@@ -43,6 +43,7 @@ class ConstraintFixerTest {
 
         // 原始 CRC 是错误的
         int originalCrc = ByteBuffer.wrap(png, png.length - 4, 4).order(ByteOrder.BIG_ENDIAN).getInt();
+        assertNotEquals(0x12345678, originalCrc, "原始 CRC 应该是错误的");
 
         byte[] fixed = ConstraintFixer.fixPngChunkCrc(png, 8); // IHDR 从偏移 8 开始
 
