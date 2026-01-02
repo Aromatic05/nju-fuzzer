@@ -1,0 +1,167 @@
+services:
+  # build-image: 仅构建并打标记基础镜像
+  build-image:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nju-fuzzer:latest
+    container_name: nju-fuzzer-build-image
+    # 只需要能访问到一组只读文件以完成构建输出复制
+    volumes:
+      - ./one_click.sh:/workspace/one_click.sh:ro
+      - ./target:/workspace/target:ro
+      - ./pom.xml:/workspace/pom.xml:ro
+      - ./src:/workspace/src:ro
+    working_dir: /workspace
+    # 构建完成后立即退出（不会长期运行）
+    command: ["sh", "-c", "echo build done && exit 0"]
+
+  # c++filt fuzzing
+  fuzzer-cppfilt:
+    image: nju-fuzzer:latest
+    container_name: nju-fuzzer-cppfilt
+    depends_on:
+      - build-image
+    volumes:
+      - ./workdir/c++filt:/workspace/workdir/c++filt
+      - ./one_click.sh:/workspace/one_click.sh:ro
+      - ./target:/workspace/target:ro
+      - ./pom.xml:/workspace/pom.xml:ro
+      - ./src:/workspace/src:ro
+    working_dir: /workspace
+    command: ["bash", "/workspace/one_click.sh", "c++filt"]
+
+  # readelf fuzzing
+  fuzzer-readelf:
+    image: nju-fuzzer:latest
+    container_name: nju-fuzzer-readelf
+    depends_on:
+      - fuzzer-cppfilt
+    volumes:
+      - ./workdir/readelf:/workspace/workdir/readelf
+      - ./one_click.sh:/workspace/one_click.sh:ro
+      - ./target:/workspace/target:ro
+      - ./pom.xml:/workspace/pom.xml:ro
+      - ./src:/workspace/src:ro
+    working_dir: /workspace
+    command: ["bash", "/workspace/one_click.sh", "readelf"]
+
+  # nm fuzzing
+  fuzzer-nm:
+    image: nju-fuzzer:latest
+    container_name: nju-fuzzer-nm
+    depends_on:
+      - fuzzer-cppfilt
+    volumes:
+      - ./workdir/nm:/workspace/workdir/nm
+      - ./one_click.sh:/workspace/one_click.sh:ro
+      - ./target:/workspace/target:ro
+      - ./pom.xml:/workspace/pom.xml:ro
+      - ./src:/workspace/src:ro
+    working_dir: /workspace
+    command: ["bash", "/workspace/one_click.sh", "nm"]
+
+  # objdump fuzzing
+  fuzzer-objdump:
+    image: nju-fuzzer:latest
+    container_name: nju-fuzzer-objdump
+    depends_on:
+      - fuzzer-cppfilt
+    volumes:
+      - ./workdir/objdump:/workspace/workdir/objdump
+      - ./one_click.sh:/workspace/one_click.sh:ro
+      - ./target:/workspace/target:ro
+      - ./pom.xml:/workspace/pom.xml:ro
+      - ./src:/workspace/src:ro
+    working_dir: /workspace
+    command: ["bash", "/workspace/one_click.sh", "objdump"]
+
+  # djpeg fuzzing
+  fuzzer-djpeg:
+    image: nju-fuzzer:latest
+    container_name: nju-fuzzer-djpeg
+    depends_on:
+      - fuzzer-cppfilt
+    volumes:
+      - ./workdir/djpeg:/workspace/workdir/djpeg
+      - ./one_click.sh:/workspace/one_click.sh:ro
+      - ./target:/workspace/target:ro
+      - ./pom.xml:/workspace/pom.xml:ro
+      - ./src:/workspace/src:ro
+    working_dir: /workspace
+    command: ["bash", "/workspace/one_click.sh", "djpeg"]
+
+  # readpng fuzzing
+  fuzzer-readpng:
+    image: nju-fuzzer:latest
+    container_name: nju-fuzzer-readpng
+    depends_on:
+      - fuzzer-cppfilt
+    volumes:
+      - ./workdir/readpng:/workspace/workdir/readpng
+      - ./one_click.sh:/workspace/one_click.sh:ro
+      - ./target:/workspace/target:ro
+      - ./pom.xml:/workspace/pom.xml:ro
+      - ./src:/workspace/src:ro
+    working_dir: /workspace
+    command: ["bash", "/workspace/one_click.sh", "readpng"]
+
+  # xmllint fuzzing
+  fuzzer-xmllint:
+    image: nju-fuzzer:latest
+    container_name: nju-fuzzer-xmllint
+    depends_on:
+      - fuzzer-cppfilt
+    volumes:
+      - ./workdir/xmllint:/workspace/workdir/xmllint
+      - ./one_click.sh:/workspace/one_click.sh:ro
+      - ./target:/workspace/target:ro
+      - ./pom.xml:/workspace/pom.xml:ro
+      - ./src:/workspace/src:ro
+    working_dir: /workspace
+    command: ["bash", "/workspace/one_click.sh", "xmllint"]
+
+  # lua fuzzing
+  fuzzer-lua:
+    image: nju-fuzzer:latest
+    container_name: nju-fuzzer-lua
+    depends_on:
+      - fuzzer-cppfilt
+    volumes:
+      - ./workdir/lua:/workspace/workdir/lua
+      - ./one_click.sh:/workspace/one_click.sh:ro
+      - ./target:/workspace/target:ro
+      - ./pom.xml:/workspace/pom.xml:ro
+      - ./src:/workspace/src:ro
+    working_dir: /workspace
+    command: ["bash", "/workspace/one_click.sh", "lua"]
+
+  # mjs fuzzing
+  fuzzer-mjs:
+    image: nju-fuzzer:latest
+    container_name: nju-fuzzer-mjs
+    depends_on:
+      - fuzzer-cppfilt
+    volumes:
+      - ./workdir/mjs:/workspace/workdir/mjs
+      - ./one_click.sh:/workspace/one_click.sh:ro
+      - ./target:/workspace/target:ro
+      - ./pom.xml:/workspace/pom.xml:ro
+      - ./src:/workspace/src:ro
+    working_dir: /workspace
+    command: ["bash", "/workspace/one_click.sh", "mjs"]
+
+  # tcpdump fuzzing
+  fuzzer-tcpdump:
+    image: nju-fuzzer:latest
+    container_name: nju-fuzzer-tcpdump
+    depends_on:
+      - fuzzer-cppfilt
+    volumes:
+      - ./workdir/tcpdump:/workspace/workdir/tcpdump
+      - ./one_click.sh:/workspace/one_click.sh:ro
+      - ./target:/workspace/target:ro
+      - ./pom.xml:/workspace/pom.xml:ro
+      - ./src:/workspace/src:ro
+    working_dir: /workspace
+    command: ["bash", "/workspace/one_click.sh", "tcpdump"]
