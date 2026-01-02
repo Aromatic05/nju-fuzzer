@@ -36,7 +36,7 @@ services:
     image: nju-fuzzer:latest
     container_name: nju-fuzzer-readelf
     depends_on:
-      - fuzzer-cppfilt
+      - build-image
     volumes:
       - ./workdir/readelf:/workspace/workdir/readelf
       - ./one_click.sh:/workspace/one_click.sh:ro
@@ -51,7 +51,7 @@ services:
     image: nju-fuzzer:latest
     container_name: nju-fuzzer-nm
     depends_on:
-      - fuzzer-cppfilt
+      - build-image
     volumes:
       - ./workdir/nm:/workspace/workdir/nm
       - ./one_click.sh:/workspace/one_click.sh:ro
@@ -66,7 +66,7 @@ services:
     image: nju-fuzzer:latest
     container_name: nju-fuzzer-objdump
     depends_on:
-      - fuzzer-cppfilt
+      - build-image
     volumes:
       - ./workdir/objdump:/workspace/workdir/objdump
       - ./one_click.sh:/workspace/one_click.sh:ro
@@ -81,7 +81,7 @@ services:
     image: nju-fuzzer:latest
     container_name: nju-fuzzer-djpeg
     depends_on:
-      - fuzzer-cppfilt
+      - build-image
     volumes:
       - ./workdir/djpeg:/workspace/workdir/djpeg
       - ./one_click.sh:/workspace/one_click.sh:ro
@@ -96,7 +96,7 @@ services:
     image: nju-fuzzer:latest
     container_name: nju-fuzzer-readpng
     depends_on:
-      - fuzzer-cppfilt
+      - build-image
     volumes:
       - ./workdir/readpng:/workspace/workdir/readpng
       - ./one_click.sh:/workspace/one_click.sh:ro
@@ -111,7 +111,7 @@ services:
     image: nju-fuzzer:latest
     container_name: nju-fuzzer-xmllint
     depends_on:
-      - fuzzer-cppfilt
+      - build-image
     volumes:
       - ./workdir/xmllint:/workspace/workdir/xmllint
       - ./one_click.sh:/workspace/one_click.sh:ro
@@ -126,7 +126,7 @@ services:
     image: nju-fuzzer:latest
     container_name: nju-fuzzer-lua
     depends_on:
-      - fuzzer-cppfilt
+      - build-image
     volumes:
       - ./workdir/lua:/workspace/workdir/lua
       - ./one_click.sh:/workspace/one_click.sh:ro
@@ -141,7 +141,7 @@ services:
     image: nju-fuzzer:latest
     container_name: nju-fuzzer-mjs
     depends_on:
-      - fuzzer-cppfilt
+      - build-image
     volumes:
       - ./workdir/mjs:/workspace/workdir/mjs
       - ./one_click.sh:/workspace/one_click.sh:ro
@@ -156,7 +156,7 @@ services:
     image: nju-fuzzer:latest
     container_name: nju-fuzzer-tcpdump
     depends_on:
-      - fuzzer-cppfilt
+      - build-image
     volumes:
       - ./workdir/tcpdump:/workspace/workdir/tcpdump
       - ./one_click.sh:/workspace/one_click.sh:ro

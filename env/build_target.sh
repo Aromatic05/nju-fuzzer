@@ -35,17 +35,20 @@ cp -f target/binutils/bin/objdump out/objdump
 # =========================================================
 rm -rf third_party/libjpeg-turbo-3.0.4/build-afl
 mkdir -p third_party/libjpeg-turbo-3.0.4/build-afl
-cd third_party/libjpeg-turbo-3.0.4/build-afl
+cd third_party/libjpeg-static-turbo-3.0.4/build-afl
 cmake .. \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX="$(pwd)/../../../target/libjpeg-turbo" \
   -DCMAKE_C_COMPILER="$CC" \
-  -DCMAKE_CXX_COMPILER="$CXX"
+  -DCMAKE_CXX_COMPILER="$CXX" \
+  -DENABLE_SHARED=OFF \
+  -DENABLE_STATIC=ON \
+  -DCMAKE_EXE_LINKER_FLAGS="-static"
 make -j"$JOBS"
 make install
 cd ../../..
 
-cp -f target/libjpeg-turbo/bin/djpeg out/djpeg
+cp -f target/libjpeg-turbo/bin/djpeg-static out/djpeg
 
 # =========================================================
 # libpng-1.6.29 (T06 readpng)  [assignment-provided method]
