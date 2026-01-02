@@ -48,7 +48,7 @@ make -j"$JOBS"
 make install
 cd ../../..
 
-cp -f target/libjpeg-turbo/bin/djpeg-static out/djpeg
+cp -f target/libjpeg-turbo/bin/djpeg out/djpeg
 
 # =========================================================
 # libpng-1.6.29 (T06 readpng)  [assignment-provided method]
