@@ -513,4 +513,132 @@ public class ConstraintFixer {
 
         return result;
     }
+
+    // ===========================================
+    // PNG 增强修复 (根据 PngMutator_Problems.md)
+    // ===========================================
+
+    /**
+     * PNG 合法的 ColorType 和 BitDepth 组合
+     */
+    private static final java.util.Map<Integer, int[]> VALID_PNG_BIT_DEPTHS = new java.util.HashMap<Integer, int[]>() {{
+        put(0, new int[]{1, 2, 4, 8, 16});   // Grayscale
+        put(2, new int[]{8, 16});             // TrueColor
+        put(3, new int[]{1, 2, 4, 8});        // Indexed
+        put(4, new int[]{8, 16});             // Grayscale + Alpha
+        put(6, new int[]{8, 16});             // TrueColor + Alpha
+    }};
+
+    /**
+     * 验证 PNG IHDR 中的 ColorType 和 BitDepth 组合是否合法
+     */
+    public static boolean isValidPngBitDepthCombo(int colorType, int bitDepth) {
+        int[] validDepths = VALID_PNG_BIT_DEPTHS.get(colorType);
+        if (validDepths == null) return false;
+        for (int valid : validDepths) {
+            if (valid == bitDepth) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 修复 PNG IHDR 中的非法 ColorType/BitDepth 组合
+     */
+    public static byte[] fixPngIhdrBitDepth(byte[] data, int ihdrOffset) {
+        int dataOffset = ihdrOffset + 8;
+        if (dataOffset + 13 > data.length) return data;
+        
+        byte[] result = data.clone();
+        int bitDepth = result[dataOffset + 8] & 0xFF;
+        int colorType = result[dataOffset + 9] & 0xFF;
+        
+        if (!isValidPngBitDepthCombo(colorType, bitDepth)) {
+            int[] validDepths = VALID_PNG_BIT_DEPTHS.get(colorType);
+            if (validDepths != null && validDepths.length > 0) {
+                int closest = validDepths[0];
+                int minDiff = Math.abs(bitDepth - closest);
+                for (int valid : validDepths) {
+                    int diff = Math.abs(bitDepth - valid);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closest = valid;
+                    }
+                }
+                result[dataOffset + 8] = (byte) closest;
+            }
+        }
+        return fixPngChunkCrc(result, ihdrOffset);
+    }
+
+    /**
+     * 确保 PNG IHDR 尺寸在合理范围内
+     */
+    public static byte[] fixPngIhdrDimensions(byte[] data, int ihdrOffset, int maxDim) {
+        int dataOffset = ihdrOffset + 8;
+        if (dataOffset + 8 > data.length) return data;
+        
+        byte[] result = data.clone();
+        java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(result);
+        bb.order(java.nio.ByteOrder.BIG_ENDIAN);
+        
+        int width = bb.getInt(dataOffset);
+        int height = bb.getInt(dataOffset + 4);
+        boolean modified = false;
+        
+        if (width <= 0 || width > maxDim) {
+            bb.putInt(dataOffset, Math.max(1, Math.min(maxDim, Math.abs(width))));
+            modified = true;
+        }
+        if (height <= 0 || height > maxDim) {
+            bb.putInt(dataOffset + 4, Math.max(1, Math.min(maxDim, Math.abs(height))));
+            modified = true;
+        }
+        return modified ? fixPngChunkCrc(result, ihdrOffset) : result;
+    }
+
+    /**
+     * 确保 PNG IHDR 尺寸合理（使用默认最大值 65535）
+     */
+    public static byte[] fixPngIhdrDimensions(byte[] data, int ihdrOffset) {
+        return fixPngIhdrDimensions(data, ihdrOffset, 65535);
+    }
+
+    /**
+     * 确保 PNG 以 IEND 块结尾
+     */
+    public static byte[] ensurePngIend(byte[] data) {
+        if (data.length < 20) return data;
+        int pos = data.length - 12;
+        if (pos >= 8) {
+            java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(data, pos, 12);
+            bb.order(java.nio.ByteOrder.BIG_ENDIAN);
+            int length = bb.getInt();
+            byte[] type = new byte[4];
+            bb.get(type);
+            if (length == 0 && new String(type).equals("IEND")) return data;
+        }
+        
+        byte[] result = new byte[data.length + 12];
+        System.arraycopy(data, 0, result, 0, data.length);
+        java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(result, data.length, 12);
+        bb.order(java.nio.ByteOrder.BIG_ENDIAN);
+        bb.putInt(0);
+        bb.put((byte) 'I').put((byte) 'E').put((byte) 'N').put((byte) 'D');
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(new byte[]{'I', 'E', 'N', 'D'});
+        bb.putInt((int) crc.getValue());
+        return result;
+    }
+
+    /**
+     * 同步 PNG 块的 Length 字段与实际数据大小
+     */
+    public static byte[] syncPngChunkLength(byte[] data, int chunkOffset, int actualDataSize) {
+        if (chunkOffset + 8 > data.length) return data;
+        byte[] result = data.clone();
+        java.nio.ByteBuffer.wrap(result, chunkOffset, 4)
+            .order(java.nio.ByteOrder.BIG_ENDIAN)
+            .putInt(actualDataSize);
+        return fixPngChunkCrc(result, chunkOffset);
+    }
 }
