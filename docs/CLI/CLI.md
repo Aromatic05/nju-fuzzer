@@ -435,6 +435,14 @@ timestamp,target_name,exec_count,covered_edges,execs_per_sec,queue_size,total_pa
 - 种子目录：脚本内置 program→ID 映射后使用 `./env/seeds/<ID>/`
 - 输出 workdir：`./workdir/<program>/<YYYYMMDD-HHMMSS>-<pid>/`
 
+注意：不同目标的启动命令会带上必要参数（对齐评测表的 AFL-CMD），例如：
+
+- `readelf`：`readelf -a @@ @@`
+- `objdump`：`objdump -d @@`
+- `mjs`：`mjs -f @@`
+- `tcpdump`：`tcpdump -nr @@`
+- `cxxfilt`/`readpng`：不带 `@@`，走 STDIN 模式
+
 运行示例：
 
 - `bash one_click.sh mjs`
