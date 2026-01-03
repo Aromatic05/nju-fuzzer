@@ -78,6 +78,23 @@ public class FuzzingEngine {
     private final AtomicLong seedIdCounter = new AtomicLong(0);
     private final Map<String, Long> numericSeedIds = new HashMap<>();
 
+    // --- Fault tolerance (main loop must not crash) ---
+    // NOTE: Catching Error (e.g., OutOfMemoryError) is usually discouraged, but fuzzers
+    // often prefer staying alive and skipping the current input/seed.
+    private static final String PROP_FAULT_TOLERANT = "nju.fuzzer.faultTolerant";
+    private static final String PROP_FATAL_ON_OOM = "nju.fuzzer.fatalOnOom";
+    private static final String PROP_FAULT_BACKOFF_MS = "nju.fuzzer.faultBackoffMs";
+
+    // Prevent long-running sessions from growing heap unbounded.
+    // <=0 means unlimited.
+    private static final String PROP_MAX_INMEM_SEEDS = "nju.fuzzer.maxInMemorySeeds";
+    // Safety valve: skip promotion of extremely large inputs (<=0 means unlimited).
+    private static final String PROP_MAX_PROMOTE_BYTES = "nju.fuzzer.maxPromoteBytes";
+
+    // OOM reserve: keep a small buffer so we can still log/cleanup when heap is exhausted.
+    private static final String PROP_OOM_RESERVE_MB = "nju.fuzzer.oomReserveMb";
+    private static volatile byte[] oomReserve;
+
     /**
      * 全参构造函数，组装所有组件。
      */
@@ -329,6 +346,9 @@ public class FuzzingEngine {
     }
 
     public void run() throws Exception {
+        // Allocate OOM reserve early to improve survivability on real heap exhaustion.
+        ensureOomReserveAllocated();
+
         // 1. 准备环境
         Path statsFile = workdir.resolve("stats/stats.csv");
         Path curveFile = workdir.resolve("stats/curve.csv");
@@ -409,6 +429,7 @@ public class FuzzingEngine {
         try (StatsWriter writer = new StatsWriter(statsFile);
              StatsCurveWriter curveWriter = new StatsCurveWriter(curveFile, curveBucketSec)) {
             long lastTickAt = System.currentTimeMillis();
+            int consecutiveFaults = 0;
 
             // --- 主循环 (Fuzzing Loop) ---
             outer:
@@ -419,46 +440,118 @@ public class FuzzingEngine {
                     break;
                 }
 
-                Seed parentSeed = prioritizer.pick(seedQueue.getSeeds());
+                Seed parentSeed;
+                try {
+                    parentSeed = prioritizer.pick(seedQueue.getSeeds());
+                } catch (Throwable t) {
+                    if (!handleLoopFault("pickSeed", null, t, consecutiveFaults++)) {
+                        break outer;
+                    }
+                    continue;
+                }
+
                 if (parentSeed == null) {
                     // Should not normally happen, but fail-safe to avoid NPE.
                     continue;
                 }
 
-                int energy = Math.max(1, scheduler.assignEnergy(parentSeed));
-                Iterator<Testcase> mutations = mutator.mutate(parentSeed, energy);
+                int energy;
+                try {
+                    energy = Math.max(1, scheduler.assignEnergy(parentSeed));
+                } catch (Throwable t) {
+                    if (!handleLoopFault("assignEnergy", parentSeed, t, consecutiveFaults++)) {
+                        break outer;
+                    }
+                    continue;
+                }
 
-                while (mutations.hasNext()) {
+                Iterator<Testcase> mutations;
+                try {
+                    mutations = mutator.mutate(parentSeed, energy);
+                } catch (Throwable t) {
+                    if (!handleLoopFault("mutate(seed)", parentSeed, t, consecutiveFaults++)) {
+                        break outer;
+                    }
+                    continue;
+                }
+
+                while (true) {
+                    boolean hasNext;
+                    try {
+                        hasNext = mutations.hasNext();
+                    } catch (Throwable t) {
+                        if (!handleLoopFault("mutator.hasNext", parentSeed, t, consecutiveFaults++)) {
+                            break outer;
+                        }
+                        break;
+                    }
+
+                    if (!hasNext) break;
+
                     nowSec = Instant.now().getEpochSecond();
                     if (nowSec - startSec >= durationSec) {
                         statusPrinter.printEvent("Time up! Stopping fuzzing.");
                         break outer;
                     }
 
-                    Testcase tc = mutations.next();
+                    Testcase tc;
+                    try {
+                        tc = mutations.next();
+                    } catch (Throwable t) {
+                        if (!handleLoopFault("mutator.next", parentSeed, t, consecutiveFaults++)) {
+                            break outer;
+                        }
+                        // Drop the rest mutations for this seed; continue outer loop.
+                        break;
+                    }
 
-                    ExecInput input = buildExecInput(targetSpec, tc, currentInputFile, execLogsDir);
-                    ExecResult result = harness.execute(input);
-                    fuzzStats.recordExec();
+                    ExecInput input;
+                    ExecResult result;
+                    try {
+                        input = buildExecInput(targetSpec, tc, currentInputFile, execLogsDir);
+                        result = harness.execute(input);
+                        fuzzStats.recordExec();
+                        consecutiveFaults = 0;
+                    } catch (Throwable t) {
+                        if (!handleLoopFault("executePipeline", parentSeed, t, consecutiveFaults++)) {
+                            break outer;
+                        }
+                        // Skip this testcase.
+                        continue;
+                    }
 
                     long nowMs = System.currentTimeMillis();
                     if (tickIntervalMs == 0 || nowMs - lastTickAt >= tickIntervalMs) {
                         StatsTick tick = fuzzStats.toStatsTick(seedQueue.size());
-                        writer.tick(tick);
-                        curveWriter.tick(tick);
+                        try {
+                            writer.tick(tick);
+                            curveWriter.tick(tick);
+                        } catch (Throwable t) {
+                            if (!handleLoopFault("statsTick", parentSeed, t, consecutiveFaults++)) {
+                                break outer;
+                            }
+                        }
                         lastTickAt = nowMs;
                     }
 
-                    if (crashOracle.isCrash(result.run())) {
-                        handleCrash(tc, result);
-                        continue;
-                    }
-                    if (result.isTimeout()) {
-                        handleHang(tc, result);
-                        continue;
-                    }
+                    try {
+                        if (crashOracle.isCrash(result.run())) {
+                            handleCrash(tc, result);
+                            continue;
+                        }
+                        if (result.isTimeout()) {
+                            handleHang(tc, result);
+                            continue;
+                        }
 
-                    handleNormalExecution(tc, result, parentSeed, currentInputFile, execLogsDir, execLogsModeNorm);
+                        handleNormalExecution(tc, result, parentSeed, currentInputFile, execLogsDir, execLogsModeNorm);
+                    } catch (Throwable t) {
+                        if (!handleLoopFault("postProcess", parentSeed, t, consecutiveFaults++)) {
+                            break outer;
+                        }
+                        // Skip this testcase.
+                        continue;
+                    }
 
                     if (tickIntervalMs > 0) {
                         try {
@@ -475,8 +568,14 @@ public class FuzzingEngine {
                 parentSeed.decreaseHandicap();
 
                 StatsTick tick = fuzzStats.toStatsTick(seedQueue.size());
-                writer.tick(tick);
-                curveWriter.tick(tick);
+                try {
+                    writer.tick(tick);
+                    curveWriter.tick(tick);
+                } catch (Throwable t) {
+                    if (!handleLoopFault("statsTick", parentSeed, t, consecutiveFaults++)) {
+                        break;
+                    }
+                }
             }
         } finally {
             // 清理资源
@@ -484,6 +583,147 @@ public class FuzzingEngine {
             harness.close();
             corpusManager.close();
         }
+    }
+
+    private boolean handleLoopFault(String stage, Seed seed, Throwable t, int consecutiveFaults) {
+        if (!isFaultTolerantEnabled()) {
+            rethrowUnchecked(t);
+            return false; // unreachable
+        }
+
+        // Be extremely defensive here: logging itself must not crash the engine.
+        try {
+            String seedId = (seed == null) ? "-" : seed.getId();
+            String seedType = (seed == null || seed.getType() == null) ? "-" : seed.getType().name();
+            String kind = t.getClass().getSimpleName();
+            String msg = t.getMessage();
+            if (msg == null) msg = "";
+            if (msg.length() > 200) msg = msg.substring(0, 200);
+
+            statusPrinter.printEvent(
+                    "FAULT stage=" + stage +
+                            " seed=" + seedId +
+                            " type=" + seedType +
+                            " ex=" + kind +
+                            (msg.isBlank() ? "" : (" msg=" + msg)) +
+                            " consecutive=" + consecutiveFaults
+            );
+        } catch (Throwable ignored) {
+            try {
+                System.err.println("[FAULT] stage=" + stage + " ex=" + t.getClass().getName());
+            } catch (Throwable ignored2) {
+                // ignore
+            }
+        }
+
+        if (t instanceof OutOfMemoryError oom) {
+            // Free the reserve first so we have a chance to allocate small objects for logging/cleanup.
+            oomReserve = null;
+            if (isFatalOnOomEnabled()) {
+                rethrowUnchecked(oom);
+                return false; // unreachable
+            }
+            bestEffortRecoverFromOom();
+        }
+
+        // Optional backoff to avoid busy-looping on repeated failures.
+        int backoffMs = getFaultBackoffMs();
+        if (backoffMs > 0) {
+            try {
+                Thread.sleep(backoffMs);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static int parseIntSysProp(String key, int defaultValue) {
+        int v = defaultValue;
+        try {
+            String raw = System.getProperty(key);
+            if (raw != null && !raw.isBlank()) {
+                v = Integer.parseInt(raw.trim());
+            }
+        } catch (Exception ignored) {
+            v = defaultValue;
+        }
+        return v;
+    }
+
+    private int getMaxInMemorySeeds() {
+        return parseIntSysProp(PROP_MAX_INMEM_SEEDS, 0);
+    }
+
+    private int getMaxPromoteBytes() {
+        return parseIntSysProp(PROP_MAX_PROMOTE_BYTES, 0);
+    }
+
+    private static void ensureOomReserveAllocated() {
+        if (oomReserve != null) return;
+        int mb = parseIntSysProp(PROP_OOM_RESERVE_MB, 8);
+        if (mb <= 0) return;
+
+        long bytes = Math.min(256L * 1024 * 1024, (long) mb * 1024 * 1024);
+        try {
+            oomReserve = new byte[(int) bytes];
+        } catch (Throwable ignored) {
+            oomReserve = null;
+        }
+    }
+
+    private static void bestEffortRecoverFromOom() {
+        // Drop references in caller; here we can only try GC / give the VM a breather.
+        try {
+            System.gc();
+        } catch (Throwable ignored) {
+        }
+        try {
+            Thread.sleep(50);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static boolean parseBoolSysProp(String key, boolean defaultValue) {
+        String raw = System.getProperty(key);
+        if (raw == null || raw.isBlank()) return defaultValue;
+        return !raw.trim().equalsIgnoreCase("false");
+    }
+
+    private boolean isFaultTolerantEnabled() {
+        // Default true: fuzzing loop must stay alive.
+        return parseBoolSysProp(PROP_FAULT_TOLERANT, true);
+    }
+
+    private boolean isFatalOnOomEnabled() {
+        // Default false: try to survive OOM by skipping the current seed/testcase.
+        return parseBoolSysProp(PROP_FATAL_ON_OOM, false);
+    }
+
+    private int getFaultBackoffMs() {
+        int ms = 0;
+        try {
+            String raw = System.getProperty(PROP_FAULT_BACKOFF_MS, "0");
+            if (raw != null && !raw.isBlank()) {
+                ms = Integer.parseInt(raw.trim());
+            }
+        } catch (Exception ignored) {
+            ms = 0;
+        }
+        return Math.max(0, ms);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> void sneakyThrow(Throwable t) throws T {
+        throw (T) t;
+    }
+
+    private static void rethrowUnchecked(Throwable t) {
+        FuzzingEngine.<RuntimeException>sneakyThrow(t);
     }
 
     // --- 辅助处理方法 ---
@@ -552,6 +792,11 @@ public class FuzzingEngine {
         }
 
         // A. 持久化 (Promotion)
+        int maxPromoteBytes = getMaxPromoteBytes();
+        if (maxPromoteBytes > 0 && tc.getData() != null && tc.getData().length > maxPromoteBytes) {
+            // Still count as executed, but do not save/promote huge inputs.
+            return;
+        }
         Path saved = corpusManager.saveToQueue(tc.getData(), result.coverage().toBasic());
         Seed newSeed = new Seed(saved.toFile(), tc);
         newSeed.setExecutionTime(result.run().execTimeNanos());
@@ -589,6 +834,15 @@ public class FuzzingEngine {
         }
 
         // D. 入队
+        int maxInMem = getMaxInMemorySeeds();
+        if (maxInMem > 0 && seedQueue.size() >= maxInMem) {
+            // Keep on-disk corpus growth, but stop growing the in-memory queue to protect heap.
+            // Persist metadata so later offline analysis still works.
+            newSeed.saveMetadata();
+            statusPrinter.printEvent("In-memory queue cap reached (" + maxInMem + "), skipping enqueue for " + newSeed.getId());
+            return;
+        }
+
         seedQueue.addSeed(newSeed);
     }
 
@@ -622,7 +876,7 @@ public class FuzzingEngine {
                 seed.setMinEdgeFrequency(coverageDB.getMinFrequency(seed.getEdges()));
                 seed.setRedundant(coverageDB.isRedundant(seedNumericId, seed.getEdges()));
 
-            } catch (Exception ignored) {
+            } catch (Throwable ignored) {
                 // Calibration is best-effort; don't fail the whole fuzzing session.
             }
         }

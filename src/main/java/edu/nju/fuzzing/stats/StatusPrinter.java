@@ -82,7 +82,7 @@ public class StatusPrinter implements AutoCloseable {
             StatsTick stats = statsSupplier.get();
             out.println(stats.toStatusLine());
             lastPrintTime = Instant.now();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             out.println("[STATUS ERROR] " + e.getMessage());
         }
     }
@@ -95,7 +95,7 @@ public class StatusPrinter implements AutoCloseable {
             StatsTick stats = statsSupplier.get();
             out.println(stats.toStatusLine());
             lastPrintTime = Instant.now();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             // Don't let exceptions stop the printer
             out.println("[STATUS ERROR] " + e.getMessage());
         }
