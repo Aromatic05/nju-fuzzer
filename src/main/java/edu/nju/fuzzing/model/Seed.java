@@ -80,6 +80,13 @@ public class Seed {
 
     // === 静态工厂：加载种子 ===
     public static Seed loadWithMetadata(File seedFile, byte[] data) {
+        return loadWithMetadata(seedFile, data, SeedType.UNKNOWN);
+    }
+
+    /**
+     * 加载种子并读取元数据；运行期间 seedType 必须全局一致，因此类型由调用方提供。
+     */
+    public static Seed loadWithMetadata(File seedFile, byte[] data, SeedType defaultType) {
         File parentDir = seedFile.getParentFile();
         File metaFile = (parentDir != null)
                 ? new File(parentDir, seedFile.getName() + ".meta")
@@ -100,8 +107,7 @@ public class Seed {
         double rarityScore = 0.0;
         CoverageEx.Stability stability = CoverageEx.Stability.UNKNOWN;
 
-        // [新增] 默认尝试自动检测类型 (解决初始种子没有meta的情况)
-        SeedType type = SeedType.detect(data);
+        SeedType type = (defaultType == null) ? SeedType.UNKNOWN : defaultType;
 
         if (metaFile.exists()) {
             try (FileInputStream in = new FileInputStream(metaFile)) {
@@ -132,15 +138,7 @@ public class Seed {
                     stability = CoverageEx.Stability.UNKNOWN;
                 }
 
-                // [新增] 如果 meta 里有记录，优先使用记录的类型
-                String typeStr = props.getProperty("seed_type");
-                if (typeStr != null) {
-                    try {
-                        type = SeedType.valueOf(typeStr);
-                    } catch (IllegalArgumentException e) {
-                        // 如果类型名称不对，保持自动检测的结果
-                    }
-                }
+                // NOTE: seed_type 字段仍会写入，但为保证一次 run 类型一致，加载时不使用该字段。
 
             } catch (Exception e) {
                 System.err.println("Warning: Corrupted metadata for " + seedFile.getName());
@@ -192,8 +190,8 @@ public class Seed {
         } else {
             this.parentId = null;
             this.depth = 0;
-            // 兜底：如果没有父节点，重新检测
-            this.type = SeedType.detect(this.data);
+            // 兜底：运行时类型必须由调用方提供；无 parent 时保持 UNKNOWN。
+            this.type = SeedType.UNKNOWN;
         }
 
         this.birthType = testcase.description();

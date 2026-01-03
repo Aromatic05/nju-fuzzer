@@ -1,7 +1,9 @@
 package edu.nju.fuzzing.schedule;
 
 import edu.nju.fuzzing.model.Seed;
+import edu.nju.fuzzing.model.SeedType;
 import edu.nju.fuzzing.model.Testcase;
+import edu.nju.fuzzing.stats.FuzzStats;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,10 +13,14 @@ import java.io.File;
 public class PowerSchedulerTest {
 
     private PowerScheduler scheduler;
+    private FuzzStats stats;
 
     @BeforeEach
     public void setup() {
-        scheduler = new PowerScheduler();
+        // Provide a stable baseline for adaptive thresholds: avg exec time ~= 100ms.
+        stats = new FuzzStats("test");
+        stats.recordExec(100_000L * 1000L);
+        scheduler = new PowerScheduler(stats);
     }
 
     // 辅助方法：创建一个没有任何加成的普通老种子
@@ -33,7 +39,11 @@ public class PowerSchedulerTest {
     }
 
     private Seed createPlainSeedWithData(byte[] data) {
-        Seed s = Seed.loadWithMetadata(new File("dummy"), data);
+        return createPlainSeedWithData(data, SeedType.UNKNOWN);
+    }
+
+    private Seed createPlainSeedWithData(byte[] data, SeedType type) {
+        Seed s = Seed.loadWithMetadata(new File("dummy"), data, type);
 
         // 去掉新手保护 (Handicap 8 -> 1)
         for (int i = 0; i < 10; i++) s.decreaseHandicap();
@@ -63,7 +73,7 @@ public class PowerSchedulerTest {
     public void testFavoredBoostsEnergy() {
         Seed s = createPlainSeed();
         s.setFavored(true);
-        Assertions.assertEquals(150, scheduler.assignEnergy(s));
+        Assertions.assertEquals(300, scheduler.assignEnergy(s));
     }
 
     /** Case 2c: CoverageDB 信号 - redundant 降低能量 */
@@ -79,7 +89,8 @@ public class PowerSchedulerTest {
     public void testRarityBoostsEnergy() {
         Seed s = createPlainSeed();
         s.setRarityScore(1.0);
-        Assertions.assertEquals(200, scheduler.assignEnergy(s));
+        // 100 * (1 + log10(1+1)) ~= 130
+        Assertions.assertEquals(130, scheduler.assignEnergy(s));
     }
 
     /** Case 2e: 输入大小因子 - 小输入 (<=128) 略增能量 */
@@ -102,10 +113,8 @@ public class PowerSchedulerTest {
     @Test
     public void testKnownTypeBoostsEnergy() {
         byte[] data = new byte[200];
-        byte[] marker = "local a=1".getBytes();
-        System.arraycopy(marker, 0, data, 0, marker.length);
 
-        Seed s = createPlainSeedWithData(data);
+        Seed s = createPlainSeedWithData(data, SeedType.LUA);
         // inputSize=200 -> size 因子中性；type!=UNKNOWN -> x1.1
         Assertions.assertEquals(110, scheduler.assignEnergy(s));
     }
@@ -151,8 +160,8 @@ public class PowerSchedulerTest {
     public void testHighCoverage() {
         Seed s = createPlainSeed();
         s.setBitmapSize(1200);
-        // 100 * 2.0 = 200
-        Assertions.assertEquals(200, scheduler.assignEnergy(s));
+        // bitmapSize 不再直接参与能量分配
+        Assertions.assertEquals(100, scheduler.assignEnergy(s));
     }
 
     /** Case 8: 覆盖率因子 - 极小覆盖 (<50) */
@@ -160,8 +169,8 @@ public class PowerSchedulerTest {
     public void testLowCoverage() {
         Seed s = createPlainSeed();
         s.setBitmapSize(10);
-        // 100 * 0.5 = 50
-        Assertions.assertEquals(50, scheduler.assignEnergy(s));
+        // bitmapSize 不再直接参与能量分配
+        Assertions.assertEquals(100, scheduler.assignEnergy(s));
     }
 
     /** Case 9: 新手保护 (Handicap >= 4) */
@@ -208,9 +217,9 @@ public class PowerSchedulerTest {
         Seed s = Seed.loadWithMetadata(new File("god"), new byte[0]); // Handicap=8 (x2)
         s.setExecutionTime(1000);      // 1us (x3)
         s.setBitmapSize(2000);         // Big (x2)
-        
-        // Total = 100 * 2 * 3 * 2 = 1200
-        Assertions.assertEquals(1200, scheduler.assignEnergy(s));
+
+        // bitmapSize 不再直接奖励，Total = 100 * 2 * 3 = 600
+        Assertions.assertEquals(600, scheduler.assignEnergy(s));
     }
 
 /** Case 12: 能量封顶测试 */
@@ -224,14 +233,12 @@ public class PowerSchedulerTest {
         s.setBitmapSize(2000);    // 极大 (x2)
         // Handicap 默认是 8 (x2)
         
-        // 理论计算：100 * 3 * 2 * 2 = 1200
-        // 如果想要触发 5000 封顶，我们可以再夸张一点，或者依靠其他因子
-        // 但目前的断言是 energy > 1000，这已经足够通过测试了
+        // 理论计算（bitmap 不奖励）：100 * 3 * 2 = 600
 
         int energy = scheduler.assignEnergy(s);
         
         // 验证
         Assertions.assertTrue(energy <= 5000, "Energy should not exceed MAX_ENERGY");
-        Assertions.assertTrue(energy > 1000, "Energy should be high for super seed, actual: " + energy);
+        Assertions.assertTrue(energy >= 600, "Energy should be high for super seed, actual: " + energy);
     }
 }

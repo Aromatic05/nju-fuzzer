@@ -182,12 +182,12 @@ public class SeedQueueTest {
      */
     @Test
     public void testSchedulingHintsArePersistedAndRestored() throws IOException {
-        // 1) 创建一个可识别类型的种子（触发 SeedType.detect）
+        // 1) 创建一个种子，并显式指定 run-wide SeedType
         byte[] data = "local a=1\nprint(a)".getBytes();
         File seedFile = tempDir.resolve("hint_seed").toFile();
         Files.write(seedFile.toPath(), data);
 
-        Seed seed = Seed.loadWithMetadata(seedFile, data);
+        Seed seed = Seed.loadWithMetadata(seedFile, data, edu.nju.fuzzing.model.SeedType.LUA);
         seed.setFavored(true);
         seed.setRedundant(true);
         seed.setMinEdgeFrequency(2);
@@ -199,7 +199,7 @@ public class SeedQueueTest {
 
         // 2) 模拟重启，重新加载
         SeedQueue reloaded = new SeedQueue();
-        reloaded.loadInitialSeeds(tempDir);
+        reloaded.loadInitialSeeds(tempDir, edu.nju.fuzzing.model.SeedType.LUA);
 
         Seed restored = reloaded.getSeeds().stream()
                 .filter(s -> s.getFile().getName().equals("hint_seed"))
@@ -212,7 +212,7 @@ public class SeedQueueTest {
         Assertions.assertEquals(0.75, restored.getRarityScore(), 1e-9);
         Assertions.assertEquals(edu.nju.fuzzing.model.CoverageEx.Stability.UNSTABLE, restored.getStability());
 
-        // 类型应当可恢复：meta 优先于自动检测
-        Assertions.assertNotEquals(edu.nju.fuzzing.model.SeedType.UNKNOWN, restored.getType());
+        // 同一次 run 必须保持同一种类型
+        Assertions.assertEquals(edu.nju.fuzzing.model.SeedType.LUA, restored.getType());
     }
 }

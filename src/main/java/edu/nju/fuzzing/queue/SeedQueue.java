@@ -1,6 +1,7 @@
 package edu.nju.fuzzing.queue;
 
 import edu.nju.fuzzing.model.Seed;
+import edu.nju.fuzzing.model.SeedType;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -27,6 +28,17 @@ public class SeedQueue {
      * @return 加载成功的种子数量
      */
     public int loadInitialSeeds(Path seedDir) throws IOException {
+        return loadInitialSeeds(seedDir, SeedType.UNKNOWN);
+    }
+
+    /**
+     * 从指定目录加载初始种子，并允许为“没有 meta 的初始种子”指定默认类型。
+     *
+     * @param seedDir 种子所在的文件夹路径
+     * @param defaultSeedType 默认类型；传 UNKNOWN 表示不覆盖自动检测
+     * @return 加载成功的种子数量
+     */
+    public int loadInitialSeeds(Path seedDir, SeedType defaultSeedType) throws IOException {
         if (!Files.exists(seedDir) || !Files.isDirectory(seedDir)) {
             throw new IOException("Seed directory does not exist or is not a directory: " + seedDir);
         }
@@ -40,7 +52,7 @@ public class SeedQueue {
                         if (path.toString().endsWith(".meta")) return;
                         byte[] data = Files.readAllBytes(path);
                         // 初始种子没有元数据，暂设为0
-                         Seed seed = Seed.loadWithMetadata(path.toFile(), data);
+                         Seed seed = Seed.loadWithMetadata(path.toFile(), data, defaultSeedType);
                          seeds.add(seed);
                     } catch (IOException e) {
                         System.err.println("Failed to read seed: " + path + ", " + e.getMessage());

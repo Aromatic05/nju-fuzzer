@@ -15,6 +15,7 @@ import edu.nju.fuzzing.model.ExecResult;
 import edu.nju.fuzzing.model.ExecInput;
 import edu.nju.fuzzing.model.CoverageEx;
 import edu.nju.fuzzing.model.Seed;
+import edu.nju.fuzzing.model.SeedType;
 import edu.nju.fuzzing.model.StatsTick;
 import edu.nju.fuzzing.model.TargetSpec;
 import edu.nju.fuzzing.model.Testcase;
@@ -34,7 +35,6 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Iterator;
 import java.util.HashMap;
 import java.util.Map;
@@ -49,6 +49,7 @@ public class FuzzingEngine {
     // --- 核心配置 ---
     private final Path workdir;
     private final int durationSec;
+    private final SeedType initialSeedTypeOverride;
     private final TargetSpec targetSpec;
 
     // --- 组件依赖 (Dependency Injection) ---
@@ -116,6 +117,7 @@ public class FuzzingEngine {
         this.workdir = workdir;
         this.initialSeedDir = initialSeedDir;
         this.durationSec = durationSec;
+        this.initialSeedTypeOverride = SeedType.UNKNOWN;
         this.targetSpec = targetSpec;
         
         this.harness = harness;
@@ -151,6 +153,7 @@ public class FuzzingEngine {
         this(
             workdir,
             workdir.resolve("seeds"),
+            SeedType.UNKNOWN,
             durationSec,
             targetSpec,
             new InstrumentedExecutorHarness(executor, new NullCoverageMonitor(65536)),
@@ -179,6 +182,7 @@ public class FuzzingEngine {
         this(
             workdir,
             workdir.resolve("seeds"),
+            SeedType.UNKNOWN,
             durationSec,
             targetSpec,
             new InstrumentedExecutorHarness(executor, coverageMonitor),
@@ -215,6 +219,7 @@ public class FuzzingEngine {
         this(
                 workdir,
                 initialSeedDir,
+                SeedType.UNKNOWN,
                 durationSec,
                 targetSpec,
                 new InstrumentedExecutorHarness(executor, coverageMonitor),
@@ -236,6 +241,7 @@ public class FuzzingEngine {
         public FuzzingEngine(
             Path workdir,
             Path initialSeedDir,
+            SeedType initialSeedTypeOverride,
             int durationSec,
             TargetSpec targetSpec,
             Executor executor,
@@ -248,6 +254,7 @@ public class FuzzingEngine {
         this(
             workdir,
             initialSeedDir,
+            initialSeedTypeOverride,
             durationSec,
             targetSpec,
             new InstrumentedExecutorHarness(executor, coverageMonitor),
@@ -263,6 +270,37 @@ public class FuzzingEngine {
         );
         }
 
+        /**
+         * CLI-friendly constructor with configurable crash classification.
+         * Backward-compatible overload: defaults seed type override to UNKNOWN.
+         */
+        public FuzzingEngine(
+            Path workdir,
+            Path initialSeedDir,
+            int durationSec,
+            TargetSpec targetSpec,
+            Executor executor,
+            Duration timeout,
+            CoverageMonitor coverageMonitor,
+            CoverageDB coverageDB,
+            CrashOracle crashOracle,
+            int tickIntervalMs
+        ) throws IOException {
+            this(
+                workdir,
+                initialSeedDir,
+                SeedType.UNKNOWN,
+                durationSec,
+                targetSpec,
+                executor,
+                timeout,
+                coverageMonitor,
+                coverageDB,
+                crashOracle,
+                tickIntervalMs
+            );
+        }
+
     private static CoverageDB chooseCoverageDB(ExecutorHarness harness, CoverageDB injected) {
         if (injected != null) return injected;
         if (harness instanceof InstrumentedExecutorHarness ih
@@ -275,6 +313,7 @@ public class FuzzingEngine {
     private FuzzingEngine(
             Path workdir,
             Path initialSeedDir,
+            SeedType initialSeedTypeOverride,
             int durationSec,
             TargetSpec targetSpec,
             ExecutorHarness harness,
@@ -290,6 +329,7 @@ public class FuzzingEngine {
     ) {
         this.workdir = workdir;
         this.initialSeedDir = initialSeedDir;
+        this.initialSeedTypeOverride = (initialSeedTypeOverride == null) ? SeedType.UNKNOWN : initialSeedTypeOverride;
         this.durationSec = durationSec;
         this.targetSpec = targetSpec;
         this.harness = harness;
@@ -403,13 +443,13 @@ public class FuzzingEngine {
         statusPrinter.printEvent("Loading initial seeds from " + initialSeedDir);
         int loaded = 0;
         if (initialSeedDir != null && Files.exists(initialSeedDir) && Files.isDirectory(initialSeedDir)) {
-            loaded = seedQueue.loadInitialSeeds(initialSeedDir);
+            loaded = seedQueue.loadInitialSeeds(initialSeedDir, initialSeedTypeOverride);
         }
         statusPrinter.printEvent("Loaded " + loaded + " initial seeds.");
         
         if (loaded == 0) {
             statusPrinter.printEvent("WARNING: No initial seeds found. Starting with dummy seed.");
-            Seed dummy = createAndAddDummySeed(workdir.resolve("tmp/seeds"));
+            Seed dummy = createAndAddDummySeed(workdir.resolve("tmp/seeds"), initialSeedTypeOverride);
             seedQueue.addSeed(dummy);
         }
 
@@ -424,7 +464,13 @@ public class FuzzingEngine {
 
         statusPrinter.start();
 
-        long startSec = Instant.now().getEpochSecond();
+        long startNs = System.nanoTime();
+        long durationNs;
+        try {
+            durationNs = Duration.ofSeconds(Math.max(0L, (long) durationSec)).toNanos();
+        } catch (Exception ignored) {
+            durationNs = 0L;
+        }
 
         try (StatsWriter writer = new StatsWriter(statsFile);
              StatsCurveWriter curveWriter = new StatsCurveWriter(curveFile, curveBucketSec)) {
@@ -434,8 +480,7 @@ public class FuzzingEngine {
             // --- 主循环 (Fuzzing Loop) ---
             outer:
             while (true) {
-                long nowSec = Instant.now().getEpochSecond();
-                if (nowSec - startSec >= durationSec) {
+                if (durationNs > 0 && System.nanoTime() - startNs >= durationNs) {
                     statusPrinter.printEvent("Time up! Stopping fuzzing.");
                     break;
                 }
@@ -453,6 +498,13 @@ public class FuzzingEngine {
                 if (parentSeed == null) {
                     // Should not normally happen, but fail-safe to avoid NPE.
                     continue;
+                }
+
+                // Ensure scheduler has access to current run stats (for adaptive thresholds).
+                try {
+                    scheduler.setFuzzStats(fuzzStats);
+                } catch (Throwable ignored) {
+                    // Best-effort; scheduling must not break the loop.
                 }
 
                 int energy;
@@ -475,6 +527,8 @@ public class FuzzingEngine {
                     continue;
                 }
 
+                boolean producedNewPathThisRound = false;
+
                 while (true) {
                     boolean hasNext;
                     try {
@@ -488,8 +542,7 @@ public class FuzzingEngine {
 
                     if (!hasNext) break;
 
-                    nowSec = Instant.now().getEpochSecond();
-                    if (nowSec - startSec >= durationSec) {
+                    if (durationNs > 0 && System.nanoTime() - startNs >= durationNs) {
                         statusPrinter.printEvent("Time up! Stopping fuzzing.");
                         break outer;
                     }
@@ -510,7 +563,8 @@ public class FuzzingEngine {
                     try {
                         input = buildExecInput(targetSpec, tc, currentInputFile, execLogsDir);
                         result = harness.execute(input);
-                        fuzzStats.recordExec();
+                        // Record both exec count and exec time for adaptive scheduling.
+                        fuzzStats.recordExec(result.run().execTimeNanos());
                         consecutiveFaults = 0;
                     } catch (Throwable t) {
                         if (!handleLoopFault("executePipeline", parentSeed, t, consecutiveFaults++)) {
@@ -544,7 +598,14 @@ public class FuzzingEngine {
                             continue;
                         }
 
-                        handleNormalExecution(tc, result, parentSeed, currentInputFile, execLogsDir, execLogsModeNorm);
+                        if (handleNormalExecution(tc, result, parentSeed, currentInputFile, execLogsDir, execLogsModeNorm)) {
+                            producedNewPathThisRound = true;
+                            try {
+                                scheduler.recordNewPathDuringRound(parentSeed);
+                            } catch (Throwable ignored) {
+                                // Best-effort.
+                            }
+                        }
                     } catch (Throwable t) {
                         if (!handleLoopFault("postProcess", parentSeed, t, consecutiveFaults++)) {
                             break outer;
@@ -566,6 +627,12 @@ public class FuzzingEngine {
                 parentSeed.markAsFuzzed();
                 parentSeed.setEnergy(energy);
                 parentSeed.decreaseHandicap();
+
+                try {
+                    scheduler.recordRoundResult(parentSeed, producedNewPathThisRound);
+                } catch (Throwable ignored) {
+                    // Best-effort.
+                }
 
                 StatsTick tick = fuzzStats.toStatsTick(seedQueue.size());
                 try {
@@ -740,7 +807,7 @@ public class FuzzingEngine {
         statusPrinter.printHang(fuzzStats.getHangs(), result.run().execTimeMs());
     }
 
-        private void handleNormalExecution(
+        private boolean handleNormalExecution(
             Testcase tc,
             ExecResult result,
             Seed parentSeed,
@@ -755,7 +822,7 @@ public class FuzzingEngine {
         // 2. 如果 Monitor 认为 Interesting，进一步通过 CoverageDB 确认 (Global check)
         // 甚至可以直接在这里入队，然后让 DB 更新全局状态
         
-        if (!interesting) return;
+        if (!interesting) return false;
 
         // 2. 全局确认：避免仅依赖局部 diff 策略造成误判
         // 只有当 CoverageDB 认为存在“真正全局新边”时，才晋升入队。
@@ -768,7 +835,7 @@ public class FuzzingEngine {
             );
             CoverageDB.UpdateResult global = coverageDB.evaluate(localDiff);
             if (!global.isInteresting()) {
-                return;
+                return false;
             }
         }
 
@@ -795,7 +862,7 @@ public class FuzzingEngine {
         int maxPromoteBytes = getMaxPromoteBytes();
         if (maxPromoteBytes > 0 && tc.getData() != null && tc.getData().length > maxPromoteBytes) {
             // Still count as executed, but do not save/promote huge inputs.
-            return;
+            return false;
         }
         Path saved = corpusManager.saveToQueue(tc.getData(), result.coverage().toBasic());
         Seed newSeed = new Seed(saved.toFile(), tc);
@@ -840,10 +907,11 @@ public class FuzzingEngine {
             // Persist metadata so later offline analysis still works.
             newSeed.saveMetadata();
             statusPrinter.printEvent("In-memory queue cap reached (" + maxInMem + "), skipping enqueue for " + newSeed.getId());
-            return;
+            return true;
         }
 
         seedQueue.addSeed(newSeed);
+        return true;
     }
 
     private void calibrateInitialQueueSeeds(Path currentInputFile, Path execLogsDir) {
@@ -1068,11 +1136,11 @@ public class FuzzingEngine {
         }
     }
 
-    private static Seed createAndAddDummySeed(Path seedDir) throws IOException {
+    private static Seed createAndAddDummySeed(Path seedDir, SeedType seedType) throws IOException {
         Files.createDirectories(seedDir);
         Path seedFile = seedDir.resolve("seed_000001");
         byte[] data = "hello-from-engine".getBytes(StandardCharsets.UTF_8);
         Files.write(seedFile, data, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        return Seed.loadWithMetadata(seedFile.toFile(), data);
+        return Seed.loadWithMetadata(seedFile.toFile(), data, seedType);
     }
 }

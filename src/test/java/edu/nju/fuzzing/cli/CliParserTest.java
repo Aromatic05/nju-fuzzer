@@ -1,5 +1,6 @@
 package edu.nju.fuzzing.cli;
 
+import edu.nju.fuzzing.model.SeedType;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
@@ -19,6 +20,7 @@ class CliParserTest {
         assertEquals("DEMO", cli.tid());
         assertEquals("/bin/cat", cli.cmdLine());
         assertEquals("none", cli.coverage());
+        assertEquals(SeedType.UNKNOWN, cli.seedType());
         assertTrue(cli.nonCrashExitCodes().isEmpty());
     }
 
@@ -66,5 +68,20 @@ class CliParserTest {
         });
 
         assertEquals(java.util.Set.of(1, 2, 4), cli.nonCrashExitCodes());
+    }
+
+    @Test
+    void parse_seedType_shouldBeCaseInsensitive() {
+        CliArgs cli = CliParser.parse(new String[]{
+                "--workdir", "/tmp/mywd",
+                "--duration", "1",
+                "--timeout", "500",
+                "--tid", "T1",
+                "--cmd", "/bin/cat",
+                "--coverage", "none",
+                "--seedType", "xml"
+        });
+
+        assertEquals(SeedType.XML, cli.seedType());
     }
 }

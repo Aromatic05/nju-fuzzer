@@ -48,17 +48,13 @@ FILE 模式（argv 中包含 `@@`，将输入写入固定文件并把路径替�
 - `--tid`：任务 ID（默认 `DEMO`）
 - `--cmd`：目标命令行（默认 `/bin/cat`）
 - `--coverage`：`none|shm|shmex`（默认 `none`；非法值会 fail-fast 抛出异常）
+- `--seedType`：本次 run 的 seed 类型（默认 `UNKNOWN`；大小写不敏感，例如 `xml`）
 - `--nonCrashExitCodes`：逗号或空格分隔的 exit code 白名单（默认空；示例：`1,2,4`）
 
 Crash 判定口径：
 
 - 默认情况下：使用 `CrashOracle` 的 shell 约定规则：`exitCode > 128` 视为 crash（通常是 `128 + signal`，如 `139=SIGSEGV`）。
 - `130`（SIGINT）与 `143`（SIGTERM）默认视为 non-crash（避免手动中断污染 crash 统计）。
-- 如果提供了 `--nonCrashExitCodes`，这些退出码会被额外视为 non-crash（不会落盘到 `crashes/`、不会计入 crash_count），而是继续走覆盖率评估/晋升逻辑。
-
-已知限制：
-
-- 由于按 `key value` 成对解析，**所有参数必须成对出现**；不支持单独 flag（例如 `--foo`），也不支持复杂的 GNU 风格组合。
 - `--cmd` 的引号/空格分隔由 `CmdLineTokenizer` 处理；实践中建议把整条命令用引号包起来传给 Maven `-Dexec.args`。
 
 ---
@@ -169,7 +165,7 @@ Crash 判定口径：
   - 递归读取普通文件（支持子目录）
   - 跳过隐藏文件（文件名以 `.` 开头）
   - 跳过 `*.meta`
-  - 对每个 seed：如果存在同名 `.meta` 则读取；否则自动做 `SeedType.detect(data)`
+  - 对每个 seed：读取 `.meta` 中的调度提示字段（favored/redundant/...），类型强制使用本次 run 的 `--seedType`（同一次 run 必须一致）
 
 如果 seeds 目录为空：引擎会创建 dummy seed（内容 `hello-from-engine`），位置：`<workdir>/tmp/seeds/seed_000001`。
 
@@ -488,7 +484,7 @@ timestamp,target_name,exec_count,covered_edges,execs_per_sec,queue_size,total_pa
 - 血缘：`parent_id`, `depth`, `birth_type`
 - 调度：`handicap`, `was_fuzzed`, `energy`, `exec_time`, `bitmap_size`
 - CoverageDB hints：`favored`, `redundant`, `min_edge_freq`, `rarity_score`, `stability`
-- 类型：`seed_type`（来自 `SeedType.detect` 或沿用父种子）
+- 类型：`seed_type`（来自 `--seedType` 或沿用父种子）
 
 注意：edge set 不会写入 `.meta`（避免元数据膨胀）。
 

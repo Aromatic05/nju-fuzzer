@@ -1,5 +1,7 @@
 package edu.nju.fuzzing.cli;
 
+import edu.nju.fuzzing.model.SeedType;
+
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -20,9 +22,25 @@ public final class CliParser {
         String tid = m.getOrDefault("--tid", "DEMO");
         String cmd = m.getOrDefault("--cmd", "/bin/cat"); // default demo
         String coverage = m.getOrDefault("--coverage", "none");
+        SeedType seedType = parseSeedType(m.getOrDefault("--seedType", SeedType.UNKNOWN.name()));
         Set<Integer> nonCrashExitCodes = parseExitCodes(m.get("--nonCrashExitCodes"));
 
-        return new CliArgs(workdir, seedsDir, duration, timeoutMs, tid, cmd, coverage, nonCrashExitCodes);
+        return new CliArgs(workdir, seedsDir, duration, timeoutMs, tid, cmd, coverage, seedType, nonCrashExitCodes);
+    }
+
+    private static SeedType parseSeedType(String raw) {
+        if (raw == null) return SeedType.UNKNOWN;
+        String s = raw.trim();
+        if (s.isEmpty()) return SeedType.UNKNOWN;
+
+        // Convenience aliases (keep minimal)
+        if (s.equalsIgnoreCase("c++")) return SeedType.CXX;
+
+        try {
+            return SeedType.valueOf(s.toUpperCase());
+        } catch (IllegalArgumentException ignored) {
+            return SeedType.UNKNOWN;
+        }
     }
 
     private static Set<Integer> parseExitCodes(String raw) {

@@ -12,6 +12,7 @@ import edu.nju.fuzzing.core.FuzzingEngine;
 import edu.nju.fuzzing.exec.CrashOracle;
 import edu.nju.fuzzing.exec.Executor;
 import edu.nju.fuzzing.exec.ProcessExecutor;
+import edu.nju.fuzzing.model.SeedType;
 import edu.nju.fuzzing.model.TargetSpec;
 
 import java.nio.file.Files;
@@ -45,6 +46,7 @@ public class FuzzerMain {
         System.out.println("cmd      = " + cli.cmdLine());
         System.out.println("seeds    = " + seedsDir.toAbsolutePath());
         System.out.println("coverage = " + cli.coverage());
+        System.out.println("seedType = " + (cli.seedType() == null ? SeedType.UNKNOWN : cli.seedType()));
 
         // parse cmdline into argv template
         List<String> argvTemplate = CmdLineTokenizer.tokenize(cli.cmdLine());
@@ -98,6 +100,7 @@ public class FuzzerMain {
         FuzzingEngine engine = new FuzzingEngine(
             workdir,
             seedsDir,
+            cli.seedType(),
             duration,
             spec,
             executor,
