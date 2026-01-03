@@ -78,6 +78,8 @@ echo "Seed Directory: $SEEDS_DIR"
 echo "Seed Type: $SEED_TYPE"
 echo "AFL-CMD: $CMD"
 
+export MAVEN_OPTS="-Xms512m -Xmx1g -XX:+UseG1GC"
+
 # 执行 Maven 命令
 mvn -q -DskipTests exec:java \
     -Dnju.fuzzer.curveBucketSec=$CURVE_BUCKET_SEC \
