@@ -7,11 +7,52 @@
 *   **语法变异算子 (Structure-Aware Mutators)**：利用对目标格式（如 XML、ELF、JPEG）的先验知识，生成符合或接近协议规范的输入。这种方式能够绕过绝大多数初级校验（如 Magic Number 检查、CRC 校验、基础解析路径），使 Fuzzer 能够触达深层的业务逻辑。
 *   **通用变异算法 (Havoc Mutator)**：在不破坏大框架的前提下，对局部数据进行“狂暴”修改。它擅长发现那些连开发者都未曾预料到的位级逻辑错误。
 
+### 核心接口
+
+```java
+public interface Mutator {
+    /**
+     * 返回一个变异迭代器，支持惰性生成测试用例
+     * 
+     * @param seed 待变异的种子
+     * @param energy 分配的能量（生成的测试用例数量）
+     * @return 测试用例迭代器
+     */
+    Iterator<Testcase> mutate(Seed seed, int energy);
+}
+```
+
 ---
 
 ## 2. 通用变异算法：AflHavocMutator
 
-`AflHavocMutator` 是本引擎的“乱拳”组件，是对经典 AFL (American Fuzzy Lop) 核心变异阶段的 Java 高性能实现。
+`AflHavocMutator` 是本引擎的"乱拳"组件，是对经典 AFL (American Fuzzy Lop) 核心变异阶段的 Java 高性能实现。
+
+### 算子权重分配
+
+```java
+// 权重表：让轻量级、保持结构的变异出现概率更高
+private void initWeights() {
+    // In-Place Ops (High Freq): ~50%
+    fillWeight(10, OP_FLIP_BIT);
+    fillWeight(10, OP_FLIP_BYTE);
+    fillWeight(10, OP_ARITH_BYTE);
+    fillWeight(10, OP_ARITH_SHORT);
+    fillWeight(5,  OP_ARITH_INT);
+    fillWeight(5,  OP_SWAP_BYTES);
+    
+    // Token & Interesting (High Value): ~20%
+    fillWeight(10, OP_INTERESTING);
+    fillWeight(10, OP_OVERWRITE_TOKEN);
+    
+    // Structural Ops (Expensive): ~30%
+    fillWeight(5, OP_INSERT_TOKEN);
+    fillWeight(5, OP_DELETE_BLOCK);
+    fillWeight(5, OP_INSERT_BLOCK);
+    fillWeight(5, OP_OVERWRITE_BLOCK);
+    fillWeight(5, OP_CLONE_BLOCK);
+}
+```
 
 ### 变异策略
 1.  **自适应堆叠 (Adaptive Stacking)**：每次变异不会只执行一个操作，而是随机堆叠 2 到 32 个算子。这种指数级的组合能力使得输入数据可以迅速从原始状态演化为面目全非的畸形状态。
@@ -36,14 +77,14 @@
 *   **优点**：能产生极深层级的嵌套结构，是测试 XML 解析状态机的关键。
 *   **缺点**：生成的属性名和标签名是随机选取的，可能无法触发特定业务逻辑（如具体的 Config 检查）。
 
-### 3.2 JsonMutator (JSON 变异器)
-*   **核心逻辑**：针对现代 Web 服务中最常见的交换格式，支持 Object, Array, String, Number 类型的深度复合。
+### 3.2 MjsMutator (JavaScript 变异器)
+*   **核心逻辑**：针对现代 JavaScript (ES Module) 语法，支持表达式、语句和声明的结构化变异。
 *   **变异策略**：
-    *   **Wide Object 攻击**：生成包含数千个唯一 Key 的对象，压迫 Hash Table 的扩容逻辑。
-    *   **Unicode 孤立代理对**：生成不匹配的 `\uD800` 等字符，专门针对 C++/Java 字符串转换时的边界崩溃。
-    *   **科学计数法极值**：生成如 `1.2e309`, `-0`, `NaN` 等特殊数值。
-*   **优点**：覆盖了 JSON 规范中的所有边缘情况。
-*   **缺点**：由于 JSON 格式极其简单，变异器很容易生成大量雷同的样本。
+    *   **变量作用域攻击**：制造复杂的闭包和 `let`/`const`/`var` 混用场景，测试作用域解析。
+    *   **Unicode 标识符**：生成包含特殊 Unicode 字符的变量名，测试解析器的字符处理。
+    *   **Arrow Function 嵌套**：构造深层嵌套的箭头函数表达式。
+*   **优点**：能够生成语法正确的 JavaScript 代码，可穿透解析器校验。
+*   **缺点**：生成的代码逻辑通常是随机的，难以触发特定业务逻辑。
 
 ### 3.3 LuaMutator (Lua 脚本变异器)
 *   **核心逻辑**：模拟 Lua 脚本的语法树（Block -> Statement -> Expression）。
@@ -110,3 +151,11 @@
 变异算法的质量直接决定了 Fuzzing 的效率。**语法变异器**解决了“如何进得去”的问题，而 **AflHavocMutator** 解决了“如何挖得深”的问题。
 
 在生产环境中，推荐将这些变异器与 **Coverage Feedback (覆盖率反馈)** 机制相结合。当语法变异器生成了一个有趣的结构并触发了新的代码路径时，Havoc 紧随其后对该路径上的种子进行微调，这是目前模糊测试领域的黄金策略。
+---
+
+## 6. 相关文档
+
+- **[binary.md](binary.md)**：二进制结构感知变异框架详解，包含 FormatScanner、StructureMutator、ConstraintFixer 等组件
+- **[grammar.md](grammar.md)**：语法感知变异框架详解，包含 Tokenizer、TreeBuilder、MutationStrategy 等组件
+- **[MutatorFactory.md](MutatorFactory.md)**：变异器工厂模式的设计与实现
+- **[MuatationOps.md](MuatationOps.md)**：底层变异操作的实现细节
