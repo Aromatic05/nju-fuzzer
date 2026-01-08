@@ -2,15 +2,16 @@
 
 ## 1. 概述
 
-`MutationOps` 是一个**高性能、无状态的底层变异算子集合**。它参考了 AFL (American Fuzzy Lop) 的经典变异策略，并在此基础上进行了 Java 语言层面的深度优化。
+`MutationOps` 是一个**高性能、无状态的底层变异算子集合**，位于 `edu.nju.fuzzing.mutate` 包中。它参考了 AFL (American Fuzzy Lop) 的经典变异策略，并在此基础上进行了 Java 语言层面的深度优化。
 
-该工具类主要用于对字节数组（`byte[]`）进行随机变异，以产生能够触发目标程序异常行为的测试用例。
+该工具类主要用于对字节数组（`byte[]`）进行随机变异，以产生能够触发目标程序异常行为的测试用例。它是 `AflHavocMutator` 的核心依赖，也可被其他变异器直接调用。
 
 ### 核心设计与优化
 
 *   **高性能 (High Performance)**：摒弃了 Java 中较为沉重的 `ByteBuffer` 包装，全部采用位运算（Bitwise Operations）手动处理多字节读写，最大化执行效率。
 *   **无锁随机 (Lock-free Randomness)**：使用 `ThreadLocalRandom` 替代 `java.util.Random`，在多线程并发 Fuzzing 场景下避免锁竞争，大幅提升吞吐量。
 *   **零 GC 压力 (Zero GC for In-Place)**：对于原地变异操作，直接修改原数组，不产生任何新的对象分配，减轻垃圾回收（Garbage Collection）压力。
+*   **自动降级 (Auto Fallback)**：当数据长度不足时，多字节操作（如 `arithInt`）会自动降级为单字节操作，确保算法的健壮性。
 
 ---
 
@@ -18,12 +19,23 @@
 
 `MutationOps` 将变异操作分为两大类：
 
-1.  **原地变异 (In-Place Mutation)**：不改变数据长度，直接修改内容。
-2.  **结构变异 (Structural Mutation)**：改变数据长度（插入或删除），返回新的数组。
+1.  **原地变异 (In-Place Mutation)**：不改变数据长度，直接修改内容。返回 `void`。
+2.  **结构变异 (Structural Mutation)**：改变数据长度（插入或删除），返回新的数组 `byte[]`。
 
 ### 2.1 魔法数字 (Interesting Values)
 
-类中预定义了 AFL 经典的“魔法数字”集合（`INTERESTING_8`, `INTERESTING_16`, `INTERESTING_32`）。这些数值（如 `0`, `-1`, `MAX_INT`, `SIZE_MAX` 等）通常是整数溢出、缓冲区边界检查等漏洞的触发点。变异算子会随机选取这些值覆盖原有数据。
+类中预定义了 AFL 经典的"魔法数字"集合，这些数值通常是整数溢出、缓冲区边界检查等漏洞的触发点：
+
+```java
+// 8-bit 边界值
+private static final byte[] INTERESTING_8 = {-128, -1, 0, 1, 16, 32, 64, 100, 127};
+
+// 16-bit 边界值
+private static final short[] INTERESTING_16 = {-32768, -129, 128, 255, 256, 512, 1000, 1024, 4096, 32767};
+
+// 32-bit 边界值
+private static final int[] INTERESTING_32 = {-2147483648, -100663046, -32769, 32768, 65535, 65536, 100663045, 2147483647};
+```
 
 ---
 
@@ -35,18 +47,19 @@
 *   返回类型：`void`
 *   副作用：直接修改传入的 `byte[] data`。
 *   性能：极高（无内存分配）。
+*   边界安全：空数组或长度不足时自动跳过或降级。
 
 | 方法名 | 描述 | 逻辑细节 |
 | :--- | :--- | :--- |
-| **`flipBit`** | 随机位翻转 | 随机选择一个字节中的某一位（Bit），将其取反（0变1，1变0）。 |
+| **`flipBit`** | 随机位翻转 | 随机选择一个字节中的某一位（Bit），将其取反（0变1，1变0）。使用 `data[idx] ^= (1 << bitIdx)` 实现。 |
 | **`flipByte`** | 随机字节翻转 | 随机选择一个字节，与 `0xFF` 进行异或操作（即按位取反）。 |
 | **`arithByte`** | 字节加减运算 | 随机选择一个字节，对其进行加或减操作，幅度为 `1` 到 `35` 之间的随机数。 |
-| **`arithShort`** | Short (2字节) 加减 | 随机选择连续的2个字节，将其视为 Short 进行加减运算。**自动处理大端/小端序**。如果数组长度不足，自动降级为 `arithByte`。 |
-| **`arithInt`** | Int (4字节) 加减 | 随机选择连续的4个字节，将其视为 Integer 进行加减运算。**自动处理大端/小端序**。如果数组长度不足，自动降级。 |
-| **`setInteresting`** | 特殊值替换 | 随机选择 8bit, 16bit 或 32bit 宽度，用预定义的“魔法数字”覆盖原数据。这是触发边界条件漏洞的核心算子。 |
+| **`arithShort`** | Short (2字节) 加减 | 随机选择连续的2个字节，将其视为 Short 进行加减运算。**自动处理大端/小端序**。如果数组长度 < 2，自动降级为 `arithByte`。 |
+| **`arithInt`** | Int (4字节) 加减 | 随机选择连续的4个字节，将其视为 Integer 进行加减运算。**自动处理大端/小端序**。如果数组长度 < 4，自动降级为 `arithShort`。 |
+| **`setInteresting`** | 特殊值替换 | 随机选择 8bit, 16bit 或 32bit 宽度，用预定义的"魔法数字"覆盖原数据。会根据数组长度自动降级宽度。 |
 | **`swapBytes`** | 字节交换 | 随机选取两个不同的索引位置，交换这两个字节的值。用于破坏魔数或校验和结构。 |
-| **`overwriteBlock`** | 块覆写 | 随机选取一段连续区域（长度 1-32），用随机生成的字节或同一个随机字节进行填充。 |
-| **`overwriteToken`** | 字典覆写 | 将用户提供的关键字（Token/Dictionary）覆盖写入到数据的随机位置。用于通过魔数检查或关键字匹配。 |
+| **`overwriteBlock`** | 块覆写 | 随机选取一段连续区域（长度 1-32，不超过数组长度），用随机字节填充。 |
+| **`overwriteToken`** | 字典覆写 | 将用户提供的关键字（Token/Dictionary）覆盖写入到数据的随机位置。如果 token 长度超过数据长度则跳过。使用 `System.arraycopy` 实现。 |
 
 ---
 
@@ -56,22 +69,41 @@
 *   返回类型：`byte[]` (新数组)
 *   副作用：不修改原数组，返回变异后的新副本。
 *   性能：涉及内存分配和数组拷贝（`System.arraycopy`）。
+*   长度保护：对于极短数据会返回克隆副本以保持语义一致性。
 
 | 方法名 | 描述 | 逻辑细节 |
 | :--- | :--- | :--- |
-| **`deleteBlock`** | 块删除 | 随机删除一段连续的数据。返回长度变短的新数组。 |
-| **`insertBlock`** | 块插入 | 在随机位置插入一段新数据（长度 1-32）。填充内容可能是随机杂色，也可能是重复的某个字节（如填充 `A`）。 |
-| **`cloneBlock`** | 块克隆 (拼接) | **非常有效的变异策略**。从原数据中复制一段内容，插入到原数据的另一个位置。这能保留数据的语义结构（如 XML 标签重复）。 |
-| **`insertToken`** | 字典插入 | 将用户提供的关键字（Token）插入到数据的随机位置。 |
+| **`deleteBlock`** | 块删除 | 随机删除一段连续的数据（长度为原数据的 1-50%）。如果数组长度 < 2，返回克隆副本。 |
+| **`insertBlock`** | 块插入 | 在随机位置插入一段新数据（长度 1-32）。50% 概率填充随机字节，50% 概率填充固定字节（如 `0x41`）。 |
+| **`cloneBlock`** | 块克隆 (拼接) | **非常有效的变异策略**。从原数据中复制一段内容（长度为原数据的 1-50%），插入到原数据的另一个位置。这能保留数据的语义结构（如 XML 标签重复）。 |
+| **`insertToken`** | 字典插入 | 将用户提供的关键字（Token）插入到数据的随机位置。返回长度为 `data.length + token.length` 的新数组。 |
 
 ---
 
 ### 辅助方法 (Helpers)
 
-这些私有方法用于处理多字节数据的读写，且**不需要创建 ByteBuffer 对象**，这是本类高性能的关键所在。
+这些私有方法用于处理多字节数据的读写，且**不需要创建 ByteBuffer 对象**，这是本类高性能的关键所在：
 
-*   `getShort` / `putShort`: 通过位移运算处理 2 字节读写。
-*   `getInt` / `putInt`: 通过位移运算处理 4 字节读写。
+```java
+// 读取 Short (2字节)
+private static short getShort(byte[] b, int off, boolean bigEndian) {
+    int b1 = b[off] & 0xFF;
+    int b2 = b[off + 1] & 0xFF;
+    return bigEndian ? (short) ((b1 << 8) | b2) : (short) (b1 | (b2 << 8));
+}
+
+// 写入 Short (2字节)
+private static void putShort(byte[] b, int off, short val, boolean bigEndian) {
+    if (bigEndian) {
+        b[off] = (byte) (val >> 8);
+        b[off + 1] = (byte) val;
+    } else {
+        b[off] = (byte) val;
+        b[off + 1] = (byte) (val >> 8);
+    }
+}
+```
+
 *   **Endianness**: 所有多字节操作都接受 `boolean bigEndian` 参数，变异时会随机选择大端或小端模式，以覆盖不同架构的目标程序。
 
 ---
