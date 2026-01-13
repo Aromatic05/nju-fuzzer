@@ -120,6 +120,7 @@
 - `pom.xml`：Maven 构建文件。
 - `Dockerfile` 与 `docker-compose.yml`：Docker 环境定义与一键运行脚本。
 - `one_click.sh`：一键运行脚本。
+- `result/`：实验结果与可视化
 
 ---
 
