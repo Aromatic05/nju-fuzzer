@@ -1,4 +1,4 @@
-# nju-fuzzer 开发日志（整合版）
+# nju-fuzzer 开发日志
 
 > 截止日期：2026-01-13
 >
@@ -6,7 +6,7 @@
 >
 > 说明：**任务分配**段落预留为空，便于你自行填写。
 
-## 阅读入口（与项目文档对齐）
+## 阅读入口
 
 - 项目总文档（运行方法/模块实现/接口细节）：[docs/PROJECTDOC.md](../PROJECTDOC.md)
 - 本文（开发过程/变更线索/Problems 清单）：[docs/DevLog/DevLog_Integrated.md](DevLog_Integrated.md)
@@ -25,7 +25,7 @@
 
 ---
 
-## 2. 时间线与里程碑（按日期）
+## 2. 时间线与里程碑
 
 | 日期 | 里程碑 | 核心产出 |
 |---|---|---|
@@ -34,7 +34,7 @@
 | 2025-12-31 | 一键跑目标 + 长跑 IO/统计优化（Iteration 5） | one_click.sh、stats/curve.csv、CrashOracle 策略、execLogs 策略、tmpfs 输入策略 |
 | 2026-01-08 | Mutate 核心框架 + 二进制/语法感知变异器 | Mutator/Factory/Ops/Havoc、binary scanner/structure mutator、grammar tokenizer/tree/strategy |
 
-> 注：CoverageMonitor 的 Iterations 1-3 与主流程集成细节记录在 `docs/CoverageMonitor/DevLog.md`。
+> CoverageMonitor 的 Iterations 1-3 与主流程集成细节记录在 `docs/CoverageMonitor/DevLog.md`。
 
 ---
 
@@ -54,11 +54,16 @@
 
 ---
 
-## 4. 任务分配（预留）
+## 4. 任务分配
 
-- [ ] 任务分配：________
-- [ ] 负责人：________
-- [ ] 截止时间：________
+- 负责人：孙一鸣
+- 任务分配：
+  - 项目整体架构与核心模块设计，框架代码编写与测试：孙一鸣
+  - Engine/Queue/Scheduler/Stats 模块具体实现与测试：杜宸宇
+  - Mutate 模块具体实现与测试：赵怡贤
+  - 数据处理：何若扬
+  - 文档编写与维护：孙一鸣、杜宸宇、赵怡贤，何若扬
+
 
 ---
 
