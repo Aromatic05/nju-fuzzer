@@ -568,8 +568,8 @@ A: 集成测试需要真实的 AFL++ 插装二进制。测试会自动跳过（`
 * **AFL++ 官方文档**: https://github.com/AFLplusplus/AFLplusplus
 * **AFL++ SHM 机制**: `docs/technical_details.md`
 * **JNA 文档**: https://github.com/java-native-access/jna
-* **项目架构说明**: [ARCHITECTURE.md](ARCHITECTURE.md)
-* **集成状态**: [INTEGRATION_STATUS.md](INTEGRATION_STATUS.md)
+* **项目架构说明**: [ARCHITECTURE.md](../ARCHITECTURE.md)
+* **集成状态**: [DevLog.md](DevLog.md)
 
 ---
 

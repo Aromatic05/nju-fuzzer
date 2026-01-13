@@ -64,6 +64,8 @@
 <summary>三. 附录（其他文档）</summary>
 
 - [1. ARCHITECTURE 架构说明](#sec-architecture-appendix)
+- [2. 开发日志（整合版）](DevLog/DevLog_Integrated.md)
+- [3. Mutator 审查清单（Problems）](mutate/Problems/PngMutator_Problems.md)
 
 </details>
 
@@ -4038,10 +4040,10 @@ private void initWeights() {
 
 ### 6. 相关文档
 
-- **[binary.md](binary.md)**：二进制结构感知变异框架详解，包含 FormatScanner、StructureMutator、ConstraintFixer 等组件
-- **[grammar.md](grammar.md)**：语法感知变异框架详解，包含 Tokenizer、TreeBuilder、MutationStrategy 等组件
-- **[MutatorFactory.md](MutatorFactory.md)**：变异器工厂模式的设计与实现
-- **[MuatationOps.md](MuatationOps.md)**：底层变异操作的实现细节
+- **[binary.md](mutate/binary.md)**：二进制结构感知变异框架详解，包含 FormatScanner、StructureMutator、ConstraintFixer 等组件
+- **[grammar.md](mutate/grammar.md)**：语法感知变异框架详解，包含 Tokenizer、TreeBuilder、MutationStrategy 等组件
+- **[MutatorFactory.md](mutate/MutatorFactory.md)**：变异器工厂模式的设计与实现
+- **[MuatationOps.md](mutate/MuatationOps.md)**：底层变异操作的实现细节
 
 ---
 

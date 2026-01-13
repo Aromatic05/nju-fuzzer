@@ -91,15 +91,15 @@ engine.run(); // 自动处理覆盖率监控、corpus 保存、统计输出
 ### 🔗 相关文件
 
 **核心组件**:
-- [FuzzingEngine.java](../src/main/java/edu/nju/fuzzing/core/FuzzingEngine.java) - 主循环，集成所有组件
-- [ShmCoverageMonitor.java](../src/main/java/edu/nju/fuzzing/cov/ShmCoverageMonitor.java) - 覆盖率监控
-- [FileCorpusManager.java](../src/main/java/edu/nju/fuzzing/corpus/FileCorpusManager.java) - Corpus 管理
-- [FuzzStats.java](../src/main/java/edu/nju/fuzzing/stats/FuzzStats.java) - 统计追踪
-- [StatusPrinter.java](../src/main/java/edu/nju/fuzzing/stats/StatusPrinter.java) - 状态输出
+- [FuzzingEngine.java](../../src/main/java/edu/nju/fuzzing/core/FuzzingEngine.java) - 主循环，集成所有组件
+- [ShmCoverageMonitor.java](../../src/main/java/edu/nju/fuzzing/cov/ShmCoverageMonitor.java) - 覆盖率监控
+- [FileCorpusManager.java](../../src/main/java/edu/nju/fuzzing/corpus/FileCorpusManager.java) - Corpus 管理
+- [FuzzStats.java](../../src/main/java/edu/nju/fuzzing/stats/FuzzStats.java) - 统计追踪
+- [StatusPrinter.java](../../src/main/java/edu/nju/fuzzing/stats/StatusPrinter.java) - 状态输出
 
 **测试**:
-- [FuzzingEngineIntegrationTest.java](../src/test/java/edu/nju/fuzzing/core/FuzzingEngineIntegrationTest.java) - 集成测试
-- [CorpusIntegrationTest.java](../src/test/java/edu/nju/fuzzing/corpus/CorpusIntegrationTest.java) - Corpus 集成测试
+- [FuzzingEngineIntegrationTest.java](../../src/test/java/edu/nju/fuzzing/core/FuzzingEngineIntegrationTest.java) - 集成测试
+- [CorpusIntegrationTest.java](../../src/test/java/edu/nju/fuzzing/corpus/CorpusIntegrationTest.java) - Corpus 集成测试
 
 ---
 

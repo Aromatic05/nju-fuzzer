@@ -579,5 +579,5 @@ public class DockerExecutorHarness implements ExecutorHarness {
 
 - [Executor.md](Executor.md) - 执行器组件文档
 - [General.md](../General.md) - 主循环设计
-- [CoverageMonitor.md](../CoverageMonitor.md) - 覆盖监控文档
-- [CoverageEx.md](../CoverageEx.md) - 扩展覆盖信息文档
+- [CoverageMonitor.md](../CoverageMonitor/CoverageMonitor.md) - 覆盖监控文档
+- [ExtendedComponents.md](../CoverageMonitor/ExtendedComponents.md) - 扩展覆盖信息文档（EdgeSet/CoverageDB/CoverageEx）
