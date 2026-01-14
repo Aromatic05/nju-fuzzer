@@ -84,4 +84,4 @@ export MAVEN_OPTS="-Xms512m -Xmx1g -XX:+UseG1GC"
 mvn -q -DskipTests exec:java \
     -Dnju.fuzzer.curveBucketSec=$CURVE_BUCKET_SEC \
   -Dexec.mainClass=edu.nju.fuzzing.cli.FuzzerMain \
-        -Dexec.args="--workdir $WORKDIR --seeds $SEEDS_DIR --seedType $SEED_TYPE --duration 60 --timeout 2000 --tid $PROG --coverage shmex --cmd \"$CMD\""
+        -Dexec.args="--workdir $WORKDIR --seeds $SEEDS_DIR --seedType $SEED_TYPE --duration 86400 --timeout 2000 --tid $PROG --coverage shmex --cmd \"$CMD\""
