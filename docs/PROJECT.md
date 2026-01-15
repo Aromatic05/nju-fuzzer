@@ -64,7 +64,7 @@
 <summary>三. 附录（其他文档）</summary>
 
 - [1. ARCHITECTURE 架构说明](#sec-architecture-appendix)
-- [2. 开发日志（整合版）](DevLog/DevLog_Integrated.md)
+- [2. 开发日志（整合版）](DevLog/DevLog.md)
 - [3. Mutator 审查清单（Problems）](mutate/Problems/PngMutator_Problems.md)
 - [4. 实验结果与可视化（result/）](#sec-visualization)
 
