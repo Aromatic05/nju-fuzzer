@@ -142,7 +142,7 @@
 [全量开发日志](DevLog/FullLog.md)
 
 <details>
-<summary>点击展开：FullLog.md（已合并原文，完整保留）</summary>
+<summary>点击展开：FullLog.md</summary>
 
 ## 全量开发日志
 
