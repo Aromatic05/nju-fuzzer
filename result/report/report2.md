@@ -6,55 +6,55 @@
 ## 测试结果展示
 ### 配置一：G-100ms
 覆盖边数随时间变化图：
-![覆盖边数随时间变化](.\Images\G-100ms\coverage_all_targets.png)
+![覆盖边数随时间变化](./Images/G-100ms/coverage_all_targets.png)
 最终覆盖率对比图：
-![覆盖边数对比](.\Images\G-100ms\final_coverage_comparison.png)
+![覆盖边数对比](./Images/G-100ms/final_coverage_comparison.png)
 运行速度图（以c++filt的图像为例）：
-![运行速度](.\Images\G-100ms\execs_per_sec_20min_avg.png)
+![运行速度](./Images/G-100ms/execs_per_sec_20min_avg.png)
 ### 配置二：G-2000ms
 覆盖边数随时间变化图：
-![覆盖边数随时间变化](.\Images\G-2000ms\coverage_all_targets.png)
+![覆盖边数随时间变化](./Images/G-2000ms/coverage_all_targets.png)
 最终覆盖率对比图：
-![覆盖边数对比](.\Images\G-2000ms\final_coverage_comparison.png)
+![覆盖边数对比](./Images/G-2000ms/final_coverage_comparison.png)
 运行速度图（以c++filt的图像为例）：
-![运行速度](.\Images\G-2000ms\execs_per_sec_20min_avg.png)
+![运行速度](./Images/G-2000ms/execs_per_sec_20min_avg.png)
 ### 配置三：nonG-100ms
 覆盖边数随时间变化图：
-![覆盖边数随时间变化](.\Images\nonG-100ms\coverage_all_targets.png)
+![覆盖边数随时间变化](./Images/nonG-100ms/coverage_all_targets.png)
 最终覆盖率对比图：
-![覆盖边数对比](.\Images\nonG-100ms\final_coverage_comparison.png)
+![覆盖边数对比](./Images/nonG-100ms/final_coverage_comparison.png)
 运行速度图（以c++filt的图像为例）：
-![运行速度](.\Images\nonG-100ms\execs_per_sec_20min_avg.png)
+![运行速度](./Images/nonG-100ms/execs_per_sec_20min_avg.png)
 ### 配置四：nonG-2000ms
 覆盖边数随时间变化图：
-![覆盖边数随时间变化](.\Images\nonG-2000ms\coverage_all_targets.png)
+![覆盖边数随时间变化](./Images/nonG-2000ms/coverage_all_targets.png)
 最终覆盖率对比图：
-![覆盖边数对比](.\Images\nonG-2000ms\final_coverage_comparison.png)
+![覆盖边数对比](./Images/nonG-2000ms/final_coverage_comparison.png)
 运行速度图（以c++filt的图像为例）：
-![运行速度](.\Images\nonG-2000ms\execs_per_sec_20min_avg.png)
+![运行速度](./Images/nonG-2000ms/execs_per_sec_20min_avg.png)
 ### 纵向对比图
 因样例较多，仅选取具有代表性的部分样例展示。
 - G结果与nonG结果相差不大的样例（以mjs为例）。    
 覆盖边数随时间变化对比图：
-![覆盖边数随时间变化](.\Images\vertical\mjs\coverage_vertical_mjs.png)
+![覆盖边数随时间变化](./Images/vertical/mjs/coverage_vertical_mjs.png)
 最终覆盖率对比图：
-![覆盖边数对比](.\Images\vertical\mjs\final_coverage_vertical_mjs.png)
+![覆盖边数对比](./Images/vertical/mjs/final_coverage_vertical_mjs.png)
 此类结果在全部结果中占多数。
 
 
 - G结果较显著优于nonG结果的样例（以readpng为例）。    
 覆盖边数随时间变化对比图：
-![覆盖边数随时间变化](.\Images\vertical\readpng\coverage_vertical_readpng.png)
+![覆盖边数随时间变化](./Images/vertical/readpng/coverage_vertical_readpng.png)
 最终覆盖率对比图：
-![覆盖边数对比](.\Images\vertical\readpng\final_coverage_vertical_readpng.png)
+![覆盖边数对比](./Images/vertical/readpng/final_coverage_vertical_readpng.png)
 此类结果在全部结果中占少数。
 
 
 - nonG结果较显著优于G结果的样例（以djpeg为例）。     
 覆盖边数随时间变化对比图：
-![覆盖边数随时间变化](.\Images\vertical\djpeg\coverage_vertical_djpeg.png)
+![覆盖边数随时间变化](./Images/vertical/djpeg/coverage_vertical_djpeg.png)
 最终覆盖率对比图：
-![覆盖边数对比](.\Images\vertical\djpeg\final_coverage_vertical_djpeg.png)
+![覆盖边数对比](./Images/vertical/djpeg/final_coverage_vertical_djpeg.png)
 此类结果在全部结果中较少。
 
 ## 结果分析
