@@ -145,6 +145,97 @@ docker compose down
 
 ---
 
+## 实验结果与可视化
+
+本仓库包含两类“结果相关内容”：
+
+1) **实验结果产物（图片/报告）**：在 `result/` 下，可直接阅读。
+2) **可视化脚本（Python）**：在 `src/main/java/edu/nju/fuzzing/visualization/` 下，用于从 `stats.csv` 生成图表。
+
+### result/ 目录说明
+
+- `result/figures/`：按实验配置分类的最终图表输出（例如 `G-100ms/`、`nonG-2000ms/`、`vertical/` 等）。
+- `result/report/report2.md`：实验分析报告（引用并嵌入 `result/report/Images/` 里的图）。
+- `result/report/Images/`：报告用的图表集合（通常是把生成的图片整理到这里，便于在报告中引用）。
+
+补充说明可见：`docs/Visual/visualization.md`。
+
+### 可视化脚本位置与依赖
+
+脚本位于：`src/main/java/edu/nju/fuzzing/visualization/`
+
+- `visualize.py`：单个目标的单次 run 作图（覆盖曲线、20 分钟均值 exec/s、最终覆盖柱状图）。
+- `visualize_totally.py`：同一配置下 10 个目标横向对比（覆盖曲线叠加 + 最终覆盖对比）。
+- `vertical.py`：同一目标在不同配置之间纵向对比（覆盖曲线叠加 + 最终覆盖对比）。
+
+依赖（本机 Python 环境安装一次即可）：
+
+```bash
+python3 -m pip install -U pandas matplotlib
+```
+
+### 1) 单次 run 单目标：visualize.py
+
+输入：一个 `stats.csv`（列至少包含 `timestamp/target_name/covered_edges/execs_per_sec`）。
+
+推荐用法：进入某次 run 的 stats 目录直接运行（例如 lua）：
+
+```bash
+cd workdir/lua/<run-id>/stats
+python3 ../../../../src/main/java/edu/nju/fuzzing/visualization/visualize.py
+```
+
+输出：会在当前目录生成：
+- `coverage_<target>.png`
+- `execs_per_sec_20min_avg.png`
+- `final_coverage.png`
+
+### 2) 同一配置 10 目标横向对比：visualize_totally.py
+
+该脚本默认读取如下目录结构（在你执行脚本的当前目录下）：
+
+```text
+./c++filt/stats.csv
+./djpeg/stats.csv
+./lua/stats.csv
+...（共 10 个目标）
+```
+
+也就是说，你需要先把每个目标的一次 run 的 `workdir/<target>/<run-id>/stats/stats.csv` 拷贝/汇总为 `./<target>/stats.csv`。
+
+在“汇总目录”中运行：
+
+```bash
+python3 /abs/path/to/nju-fuzzer/src/main/java/edu/nju/fuzzing/visualization/visualize_totally.py
+```
+
+输出：
+- `coverage_all_targets.png`
+- `final_coverage_comparison.png`
+
+### 3) 同一目标跨配置纵向对比：vertical.py
+
+该脚本默认读取如下目录结构（在你执行脚本的当前目录下）：
+
+```text
+./G-100ms/<target>/stats.csv
+./G-2000ms/<target>/stats.csv
+./nonG-100ms/<target>/stats.csv
+./nonG-2000ms/<target>/stats.csv
+```
+
+然后编辑脚本里的 `TARGET_NAME`（默认为 `xmllint`）并运行：
+
+```bash
+python3 /abs/path/to/nju-fuzzer/src/main/java/edu/nju/fuzzing/visualization/vertical.py
+```
+
+输出：
+- `coverage_vertical_<target>.png`
+- `final_coverage_vertical_<target>.png`
+
+---
+
 ## 进一步阅读
 
 - 如果你想了解完整参数、STDIN/FILE 输入模式、覆盖模式 `none|shm|shmex`、以及 workdir 更详细的复现指南：
