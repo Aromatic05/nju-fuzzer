@@ -6,7 +6,7 @@
 ## 阅读入口
 
 - 项目总文档（运行方法/模块实现/接口细节）：[docs/PROJECT.md](PROJECT.md)
-- 本文（开发过程/变更线索/Problems 清单）：[docs/DevLog/DevLog_Integrated.md](DevLog_Integrated.md)
+- 本文（开发过程/变更线索/Problems 清单）：[docs/Devlog.md](Devlog.md)
 
 ---
 
