@@ -158,6 +158,12 @@ docker compose down
 - `result/report/report2.md`：实验分析报告（引用并嵌入 `result/report/Images/` 里的图）。
 - `result/report/Images/`：报告用的图表集合（通常是把生成的图片整理到这里，便于在报告中引用）。
 
+其中配置目录名含义：
+
+- `G-100ms/`、`G-2000ms/`：开启语法相关处理（G = Grammar），单次执行超时（timeout）分别为 100ms / 2000ms
+- `nonG-100ms/`、`nonG-2000ms/`：不启用语法相关处理（nonG = non-Grammar），timeout 分别为 100ms / 2000ms
+- `vertical/`：纵向对比（固定同一目标，在一张图里对比不同配置的曲线）
+
 补充说明可见：`docs/Visual/visualization.md`。
 
 ### 可视化脚本位置与依赖

@@ -25,6 +25,23 @@ result/
 
 `figures/` 中的图片均由实验数据直接生成，作为本项目的主要可视化结果。  
 
+### figures/ 下的配置目录命名含义
+
+`figures/` 目录下按“实验配置”组织输出，常见子目录如下：
+
+- `G-100ms/`：开启语法相关处理（G = Grammar），单次执行超时（timeout）为 100ms 的实验结果
+- `G-2000ms/`：开启语法相关处理（G = Grammar），单次执行超时为 2000ms 的实验结果
+- `nonG-100ms/`：不启用语法相关处理（nonG = non-Grammar），timeout 为 100ms 的实验结果
+- `nonG-2000ms/`：不启用语法相关处理（nonG = non-Grammar），timeout 为 2000ms 的实验结果
+
+每个配置目录内通常按目标程序再分一层（例如 `c++filt/`、`xmllint/` 等），存放该目标在该配置下的图表（如覆盖曲线、exec/s 曲线等）。
+
+### vertical/ 的含义
+
+`vertical/` 表示“纵向对比”：固定同一个目标程序，把不同配置（`G-100ms`、`G-2000ms`、`nonG-100ms`、`nonG-2000ms`）的覆盖曲线画在一张图上，便于比较不同配置对同一目标的影响。
+
+对应脚本：`vertical.py`（同一样例跨配置对比）。
+
 ## report/
 
 该目录存放实验的**结果分析报告**，使用 Markdown 格式编写。
