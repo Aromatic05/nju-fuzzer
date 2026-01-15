@@ -27,23 +27,65 @@ NJU-Fuzzer 是一个以 **coverage-guided mutation-based fuzzing** 为核心的 
 
 ### 运行示例（以 lua 为例）
 
-前台运行（结束后容器退出，workdir 保留在宿主机）：
+下面的命令都在仓库根目录执行（与 [docker-compose.yml](docker-compose.yml) 同级）。
+
+1) 仅构建镜像（不启动 fuzzer）：
+
+```bash
+docker compose build build-image
+```
+
+2) 单个目标，前台跑（退出即停止，容器自动删除；产物保留在宿主机 workdir）：
 
 ```bash
 docker compose run --rm fuzzer-lua
 ```
 
-后台运行（可用 `docker compose logs -f fuzzer-lua` 追日志）：
+如果你修改了代码/依赖，想确保先重新 build：
 
 ```bash
-docker compose up fuzzer-lua
+docker compose run --rm --build fuzzer-lua
 ```
 
-如果你希望只先构建镜像：
+3) 单个目标，后台跑：
 
 ```bash
-docker compose up --build build-image
+docker compose up -d fuzzer-lua
+docker compose logs -f fuzzer-lua
 ```
+
+停止并删除该服务容器（不删除 workdir 数据）：
+
+```bash
+docker compose stop fuzzer-lua
+docker compose rm -f fuzzer-lua
+```
+
+4) 多个目标并行跑（会比较吃 CPU/内存）：
+
+```bash
+docker compose up -d fuzzer-lua fuzzer-mjs fuzzer-xmllint
+docker compose logs -f --tail=200 fuzzer-lua
+```
+
+5) 启动全部服务（包含 10 个 fuzzer + 1 个 build-image；build-image 会很快退出）：
+
+```bash
+docker compose up -d
+docker compose ps
+```
+
+停止全部服务（同样不删除 workdir 数据）：
+
+```bash
+docker compose down
+```
+
+6) 产物位置（以 lua 为例）：
+
+- 宿主机目录：`./workdir/lua/`
+- 每次 run 会创建独立子目录：`./workdir/lua/<run-id>/`
+- 典型内容：`queue/`、`crashes/`、`hangs/`、`stats/`、`tmp/`
 
 ### 当前内置目标（docker-compose 已配置）
 
