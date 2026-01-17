@@ -150,7 +150,7 @@ docker compose down
 本仓库包含两类“结果相关内容”：
 
 1) **实验结果产物（图片/报告）**：在 `result/` 下，可直接阅读。
-2) **可视化脚本（Python）**：在 `src/main/java/edu/nju/fuzzing/visualization/` 下，用于从 `stats.csv` 生成图表。
+2) **可视化脚本（Python）**：在 `visualization/` 下，用于从 `stats.csv` 生成图表。
 
 ### result/ 目录说明
 
@@ -233,7 +233,7 @@ python3 /abs/path/to/nju-fuzzer/src/main/java/edu/nju/fuzzing/visualization/visu
 然后编辑脚本里的 `TARGET_NAME`（默认为 `xmllint`）并运行：
 
 ```bash
-python3 /abs/path/to/nju-fuzzer/src/main/java/edu/nju/fuzzing/visualization/vertical.py
+python3 /abs/path/to/nju-fuzzer/visualization/vertical.py
 ```
 
 输出：
